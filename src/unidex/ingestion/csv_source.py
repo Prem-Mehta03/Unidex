@@ -85,5 +85,5 @@ class CsvFileSource(FileSource):
             mime_type=mime_type,
             modified_on=parse_modified_date(row["modified"]),
             url=row["url"].strip(),
-            is_indexable=is_indexable(extension, mime_type),
+            is_indexable=is_indexable(extension, mime_type, row["path"]),
         )

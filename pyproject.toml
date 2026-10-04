@@ -9,6 +9,8 @@ description = "Unified, searchable index of campus department drives (PYQs, note
 requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0",
+    # zoneinfo has no time-zone data on Windows without this package.
+    "tzdata>=2024.1; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]

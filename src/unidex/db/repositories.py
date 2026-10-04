@@ -10,11 +10,12 @@ or fail together.
 """
 
 import sqlite3
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 
 from unidex.exceptions import IngestionError
+from unidex.models.metadata import ExtractedMetadata
 from unidex.models.raw_file import RawFile
 from unidex.normalize import normalize_alias
 
@@ -264,3 +265,440 @@ class RawFileRepository(BaseRepository):
                 url=row["url"],
                 is_indexable=bool(row["is_indexable"]),
             )
+
+    def iter_indexable(self) -> Iterator["StoredFile"]:
+        """Yield every searchable file with its database id, ordered by path then name.
+
+        Yields:
+            One :class:`StoredFile` per searchable row.
+        """
+        cursor = self._conn.execute(
+            """
+            SELECT id, drive_file_id, path, name, extension, mime_type, modified_on, url,
+                   is_indexable
+            FROM raw_files WHERE is_indexable = 1 ORDER BY path, name
+            """
+        )
+        for row in cursor:
+            yield StoredFile(
+                raw_file_id=int(row["id"]),
+                file=RawFile(
+                    drive_file_id=row["drive_file_id"],
+                    path=row["path"],
+                    name=row["name"],
+                    extension=row["extension"],
+                    mime_type=row["mime_type"],
+                    modified_on=None
+                    if row["modified_on"] is None
+                    else date.fromisoformat(row["modified_on"]),
+                    url=row["url"],
+                    is_indexable=bool(row["is_indexable"]),
+                ),
+            )
+
+
+@dataclass(frozen=True, slots=True)
+class StoredFile:
+    """A raw file together with its database id.
+
+    Attributes:
+        raw_file_id: Primary key in ``raw_files``.
+        file: The file record.
+    """
+
+    raw_file_id: int
+    file: RawFile
+
+
+class DocumentRepository(BaseRepository):
+    """Reads and writes the ``documents`` table (interpreted metadata)."""
+
+    # Rows a human has reviewed are never overwritten by a later automatic run.
+    _UPSERT_SQL = """
+        INSERT INTO documents (
+            raw_file_id, course_id, title, drive_url, mime_type, academic_year, semester,
+            instructor, exam_type, exam_number, doc_type, is_makeup, has_solution,
+            syllabus_scope, extraction_method, extraction_confidence, extraction_notes,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (raw_file_id) DO UPDATE SET
+            course_id = excluded.course_id,
+            title = excluded.title,
+            drive_url = excluded.drive_url,
+            mime_type = excluded.mime_type,
+            academic_year = excluded.academic_year,
+            semester = excluded.semester,
+            instructor = excluded.instructor,
+            exam_type = excluded.exam_type,
+            exam_number = excluded.exam_number,
+            doc_type = excluded.doc_type,
+            is_makeup = excluded.is_makeup,
+            has_solution = excluded.has_solution,
+            syllabus_scope = excluded.syllabus_scope,
+            extraction_method = excluded.extraction_method,
+            extraction_confidence = excluded.extraction_confidence,
+            extraction_notes = excluded.extraction_notes
+        WHERE documents.reviewed = 0
+    """
+
+    def upsert_many(self, items: Iterable[tuple[StoredFile, ExtractedMetadata]], now: str) -> None:
+        """Store extraction results, keeping rows that a human already reviewed.
+
+        Args:
+            items: Pairs of the stored file and its extracted metadata.
+            now: ISO-8601 UTC timestamp used for ``created_at`` of new rows.
+        """
+        params = [
+            (
+                stored.raw_file_id,
+                meta.course_id,
+                meta.title,
+                stored.file.url,
+                stored.file.mime_type,
+                meta.academic_year,
+                meta.semester,
+                meta.instructor,
+                meta.exam_type.value,
+                meta.exam_number,
+                meta.doc_type.value,
+                int(meta.is_makeup),
+                int(meta.has_solution),
+                None if meta.syllabus_scope is None else meta.syllabus_scope.value,
+                meta.method.value,
+                meta.confidence,
+                "; ".join(meta.notes),
+                now,
+            )
+            for stored, meta in items
+        ]
+        self._conn.executemany(self._UPSERT_SQL, params)
+
+    def ids_by_raw_file(self) -> dict[int, tuple[int, bool]]:
+        """Map each raw file id to ``(document id, reviewed)``."""
+        rows = self._conn.execute("SELECT raw_file_id, id, reviewed FROM documents")
+        return {int(r["raw_file_id"]): (int(r["id"]), bool(r["reviewed"])) for r in rows}
+
+    def llm_answers(self) -> dict[int, tuple[str, str, int | None, bool]]:
+        """Return earlier language-model answers so a re-run does not ask again.
+
+        Returns:
+            Mapping from raw file id to ``(doc_type, exam_type, exam_number,
+            is_makeup)`` for rows currently labelled ``llm`` and not reviewed.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT raw_file_id, doc_type, exam_type, exam_number, is_makeup
+            FROM documents WHERE extraction_method = 'llm' AND reviewed = 0
+            """
+        )
+        return {
+            int(r["raw_file_id"]): (
+                r["doc_type"],
+                r["exam_type"],
+                r["exam_number"],
+                bool(r["is_makeup"]),
+            )
+            for r in rows
+        }
+
+    def count(self) -> int:
+        """Count stored documents."""
+        return int(self._conn.execute("SELECT COUNT(*) AS n FROM documents").fetchone()["n"])
+
+    def count_by(self, column: str) -> dict[str, int]:
+        """Count documents grouped by one of a fixed set of columns.
+
+        Args:
+            column: ``doc_type``, ``exam_type`` or ``extraction_method``.
+
+        Returns:
+            Mapping from value to number of documents, largest first.
+
+        Raises:
+            ValueError: If ``column`` is not one of the allowed names. (The
+                name is placed in the SQL text, so it is checked against a
+                whitelist instead of being trusted.)
+        """
+        if column not in {"doc_type", "exam_type", "extraction_method"}:
+            raise ValueError(f"Cannot group by {column!r}")
+        rows = self._conn.execute(
+            f"SELECT {column} AS value, COUNT(*) AS n FROM documents "  # noqa: S608
+            "GROUP BY 1 ORDER BY 2 DESC"
+        ).fetchall()
+        return {str(row["value"]): int(row["n"]) for row in rows}
+
+    def mark_manual(
+        self,
+        drive_file_id: str,
+        fields: dict[str, str | int | None],
+    ) -> bool:
+        """Apply a human correction and lock the row against automatic overwrites.
+
+        Args:
+            drive_file_id: Drive id of the file whose document is corrected.
+            fields: Column names and new values. Only the columns in
+                :data:`EDITABLE_COLUMNS` are accepted.
+
+        Returns:
+            True if a document was updated, False if none matches the id.
+
+        Raises:
+            ValueError: If a column is not editable.
+        """
+        unknown = set(fields) - EDITABLE_COLUMNS
+        if unknown:
+            raise ValueError(f"Columns are not editable: {sorted(unknown)}")
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        sql = (
+            f"UPDATE documents SET {assignments}"  # noqa: S608
+            + (", " if assignments else "")
+            + "extraction_method = 'manual', extraction_confidence = 1.0, reviewed = 1 "
+            "WHERE raw_file_id = (SELECT id FROM raw_files WHERE drive_file_id = ?)"
+        )
+        cursor = self._conn.execute(sql, (*fields.values(), drive_file_id))
+        return cursor.rowcount > 0
+
+
+# Columns a reviewer may change. Everything else is derived and stays untouched.
+EDITABLE_COLUMNS = frozenset(
+    {
+        "doc_type",
+        "exam_type",
+        "exam_number",
+        "academic_year",
+        "is_makeup",
+        "has_solution",
+        "syllabus_scope",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewItem:
+    """One file waiting for a human check.
+
+    Attributes:
+        drive_file_id: Drive id of the file.
+        reason: Why it needs a look.
+        path: Folder path.
+        name: File name.
+        url: Link to open the file.
+        doc_type: Current document type.
+        exam_type: Current exam type.
+        exam_number: Current quiz/test number, if any.
+        academic_year: Current academic year, if known.
+        is_makeup: Current make-up flag.
+        has_solution: Current has-solution flag.
+        syllabus_scope: Current scope, or empty string.
+    """
+
+    drive_file_id: str
+    reason: str
+    path: str
+    name: str
+    url: str
+    doc_type: str
+    exam_type: str
+    exam_number: int | None
+    academic_year: int | None
+    is_makeup: bool
+    has_solution: bool
+    syllabus_scope: str
+
+
+class ReviewQueueRepository(BaseRepository):
+    """Reads and writes the ``review_queue`` table."""
+
+    def sync(self, entries: Mapping[int, str], now: str) -> tuple[int, int]:
+        """Make the open queue match the documents that currently need review.
+
+        Documents in ``entries`` get an open row (reason refreshed). Open rows
+        for documents no longer in ``entries`` are marked resolved, because
+        better rules or a language-model answer fixed them.
+
+        Args:
+            entries: Mapping from document id to the reason it needs review.
+            now: ISO-8601 UTC timestamp.
+
+        Returns:
+            ``(opened, resolved)`` counts of rows opened or auto-resolved.
+        """
+        previously_open = {
+            int(row["document_id"])
+            for row in self._conn.execute(
+                "SELECT document_id FROM review_queue WHERE status = 'open'"
+            )
+        }
+        self._conn.executemany(
+            """
+            INSERT INTO review_queue (document_id, reason, status, created_at)
+            VALUES (?, ?, 'open', ?)
+            ON CONFLICT (document_id) DO UPDATE SET
+                reason = excluded.reason, status = 'open', resolved_at = NULL
+            """,
+            [(doc_id, reason, now) for doc_id, reason in entries.items()],
+        )
+        stale = sorted(previously_open - set(entries))
+        self._conn.executemany(
+            "UPDATE review_queue SET status = 'resolved', resolved_at = ? WHERE document_id = ?",
+            [(now, doc_id) for doc_id in stale],
+        )
+        return len(set(entries) - previously_open), len(stale)
+
+    def resolve_for_drive_ids(self, drive_file_ids: Iterable[str], now: str) -> None:
+        """Mark the queue rows of the given files as resolved.
+
+        Args:
+            drive_file_ids: Drive ids of files a human has just reviewed.
+            now: ISO-8601 UTC timestamp.
+        """
+        self._conn.executemany(
+            """
+            UPDATE review_queue SET status = 'resolved', resolved_at = ?
+            WHERE document_id IN (
+                SELECT d.id FROM documents d JOIN raw_files r ON r.id = d.raw_file_id
+                WHERE r.drive_file_id = ?
+            )
+            """,
+            [(now, drive_id) for drive_id in drive_file_ids],
+        )
+
+    def count_open(self) -> int:
+        """Count files still waiting for review."""
+        row = self._conn.execute("SELECT COUNT(*) AS n FROM review_queue WHERE status = 'open'")
+        return int(row.fetchone()["n"])
+
+    def iter_open(self) -> Iterator[ReviewItem]:
+        """Yield open review items, the least certain first.
+
+        Yields:
+            One :class:`ReviewItem` per open row.
+        """
+        cursor = self._conn.execute(
+            """
+            SELECT r.drive_file_id, q.reason, r.path, r.name, r.url, d.doc_type, d.exam_type,
+                   d.exam_number, d.academic_year, d.is_makeup, d.has_solution,
+                   COALESCE(d.syllabus_scope, '') AS syllabus_scope
+            FROM review_queue q
+            JOIN documents d ON d.id = q.document_id
+            JOIN raw_files r ON r.id = d.raw_file_id
+            WHERE q.status = 'open'
+            ORDER BY d.extraction_confidence, r.path, r.name
+            """
+        )
+        for row in cursor:
+            yield ReviewItem(
+                drive_file_id=row["drive_file_id"],
+                reason=row["reason"],
+                path=row["path"],
+                name=row["name"],
+                url=row["url"],
+                doc_type=row["doc_type"],
+                exam_type=row["exam_type"],
+                exam_number=row["exam_number"],
+                academic_year=row["academic_year"],
+                is_makeup=bool(row["is_makeup"]),
+                has_solution=bool(row["has_solution"]),
+                syllabus_scope=row["syllabus_scope"],
+            )
+
+
+class LlmUsageRepository(BaseRepository):
+    """Counts language-model requests per day (``llm_usage`` table)."""
+
+    def requests_on(self, day: str) -> int:
+        """Return how many requests were made on a day.
+
+        Args:
+            day: ISO date ``YYYY-MM-DD`` in the provider's quota time zone.
+        """
+        row = self._conn.execute("SELECT requests FROM llm_usage WHERE day = ?", (day,)).fetchone()
+        return 0 if row is None else int(row["requests"])
+
+    def record_request(self, day: str) -> int:
+        """Add one request to a day's count and return the new total.
+
+        Args:
+            day: ISO date ``YYYY-MM-DD`` in the provider's quota time zone.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO llm_usage (day, requests) VALUES (?, 1)
+            ON CONFLICT (day) DO UPDATE SET requests = requests + 1
+            """,
+            (day,),
+        )
+        return self.requests_on(day)
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentView:
+    """A document joined with the raw file it came from.
+
+    Attributes:
+        drive_file_id: Drive id of the file.
+        path: Folder path.
+        name: File name.
+        url: Link to open the file.
+        doc_type: Document type.
+        exam_type: Exam type.
+        exam_number: Quiz or test number, if any.
+        academic_year: Start year of the academic year, if known.
+        is_makeup: Make-up flag.
+        has_solution: Whether solutions are included.
+        confidence: Extraction confidence, 0 to 1.
+        method: ``rule``, ``llm`` or ``manual``.
+        course_code: Course code such as ``CS F213``, or empty.
+    """
+
+    drive_file_id: str
+    path: str
+    name: str
+    url: str
+    doc_type: str
+    exam_type: str
+    exam_number: int | None
+    academic_year: int | None
+    is_makeup: bool
+    has_solution: bool
+    confidence: float
+    method: str
+    course_code: str
+
+
+def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
+    """Yield every document joined with its raw file and course code.
+
+    Args:
+        conn: An open connection.
+
+    Yields:
+        One :class:`DocumentView` per document, ordered by path then name.
+    """
+    cursor = conn.execute(
+        """
+        SELECT r.drive_file_id, r.path, r.name, r.url, d.doc_type, d.exam_type, d.exam_number,
+               d.academic_year, d.is_makeup, d.has_solution, d.extraction_confidence,
+               d.extraction_method, COALESCE(c.code, '') AS course_code
+        FROM documents d
+        JOIN raw_files r ON r.id = d.raw_file_id
+        LEFT JOIN courses c ON c.id = d.course_id
+        ORDER BY r.path, r.name
+        """
+    )
+    for row in cursor:
+        yield DocumentView(
+            drive_file_id=row["drive_file_id"],
+            path=row["path"],
+            name=row["name"],
+            url=row["url"],
+            doc_type=row["doc_type"],
+            exam_type=row["exam_type"],
+            exam_number=row["exam_number"],
+            academic_year=row["academic_year"],
+            is_makeup=bool(row["is_makeup"]),
+            has_solution=bool(row["has_solution"]),
+            confidence=float(row["extraction_confidence"] or 0.0),
+            method=row["extraction_method"] or "",
+            course_code=row["course_code"],
+        )

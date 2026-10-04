@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS raw_files (
 );
 
 -- Interpreted metadata. Filled in by the extractor (Stage 3).
--- exam_type / doc_type / link_status values mirror unidex.models.enums.
+-- exam_type / doc_type / syllabus_scope / extraction_method values mirror
+-- unidex.models.enums; a test keeps the two in sync.
 CREATE TABLE IF NOT EXISTS documents (
     id                    INTEGER PRIMARY KEY,
     raw_file_id           INTEGER NOT NULL UNIQUE REFERENCES raw_files (id) ON DELETE CASCADE,
@@ -69,18 +70,42 @@ CREATE TABLE IF NOT EXISTS documents (
     semester              INTEGER,
     instructor            TEXT,
     exam_type             TEXT NOT NULL DEFAULT 'unknown'
-        CHECK (exam_type IN ('quiz', 'midsem', 'compre', 'lab_compre', 'none', 'unknown')),
+        CHECK (exam_type IN ('quiz', 'test', 'midsem', 'compre', 'lab_compre', 'lab_quiz',
+                             'none', 'unknown')),
     exam_number           INTEGER,                 -- Quiz 1, Quiz 2, ...
     doc_type              TEXT NOT NULL DEFAULT 'unknown'
-        CHECK (doc_type IN ('pyq', 'solution', 'notes', 'slides', 'tutorial', 'lab',
-                            'cheatsheet', 'other', 'unknown')),
+        CHECK (doc_type IN ('pyq', 'solution', 'notes', 'slides', 'tutorial', 'assignment',
+                            'lab', 'cheatsheet', 'handout', 'textbook', 'grade_stats',
+                            'other', 'unknown')),
+    is_makeup             INTEGER NOT NULL DEFAULT 0 CHECK (is_makeup IN (0, 1)),
+    has_solution          INTEGER NOT NULL DEFAULT 0 CHECK (has_solution IN (0, 1)),
+    syllabus_scope        TEXT CHECK (syllabus_scope IN ('pre_midsem', 'post_midsem')),
     content_hash          TEXT,
     link_status           TEXT NOT NULL DEFAULT 'unknown'
         CHECK (link_status IN ('unknown', 'ok', 'broken', 'no_access')),
     extraction_method     TEXT CHECK (extraction_method IN ('rule', 'llm', 'manual')),
     extraction_confidence REAL CHECK (extraction_confidence BETWEEN 0 AND 1),
+    extraction_notes      TEXT,                    -- reasons, '; '-separated
     reviewed              INTEGER NOT NULL DEFAULT 0 CHECK (reviewed IN (0, 1)),
     created_at            TEXT NOT NULL
+);
+
+-- Files a human should look at. One open row per document; resolving it keeps
+-- the row (status = 'resolved') so there is a record of what was fixed.
+CREATE TABLE IF NOT EXISTS review_queue (
+    id          INTEGER PRIMARY KEY,
+    document_id INTEGER NOT NULL UNIQUE REFERENCES documents (id) ON DELETE CASCADE,
+    reason      TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved')),
+    created_at  TEXT NOT NULL,
+    resolved_at TEXT
+);
+
+-- How many language-model requests were made per day, so the free-tier daily
+-- limit survives restarts. day is the date in the provider's quota time zone.
+CREATE TABLE IF NOT EXISTS llm_usage (
+    day      TEXT PRIMARY KEY,
+    requests INTEGER NOT NULL DEFAULT 0 CHECK (requests >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS search_logs (
@@ -107,3 +132,5 @@ CREATE INDEX IF NOT EXISTS idx_raw_files_indexable ON raw_files (is_indexable);
 CREATE INDEX IF NOT EXISTS idx_documents_course_year_exam
     ON documents (course_id, academic_year, exam_type);
 CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON documents (content_hash);
+CREATE INDEX IF NOT EXISTS idx_documents_doc_type ON documents (doc_type);
+CREATE INDEX IF NOT EXISTS idx_review_queue_status ON review_queue (status);

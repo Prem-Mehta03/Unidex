@@ -16,3 +16,23 @@ class ConfigError(UnidexError):
 
 class IngestionError(UnidexError):
     """Raised when a file listing or a seed file cannot be read or is malformed."""
+
+
+class DatabaseError(UnidexError):
+    """Raised when the database is in a state Unidex cannot safely continue from."""
+
+
+class ExtractionError(UnidexError):
+    """Raised when metadata extraction cannot proceed (for example a bad review file)."""
+
+
+class LLMError(UnidexError):
+    """Raised when a language-model request fails or returns something unusable."""
+
+
+class LLMRateLimitError(LLMError):
+    """Raised when the provider rejects a request because a quota was reached."""
+
+
+class LLMBudgetExceededError(LLMError):
+    """Raised before a request is sent if it would exceed the configured daily budget."""

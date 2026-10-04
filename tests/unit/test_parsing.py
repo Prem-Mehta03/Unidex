@@ -94,3 +94,19 @@ def test_is_indexable(extension: str, mime_type: str, expected: bool) -> None:
 )
 def test_normalize_alias(text: str, expected: str) -> None:
     assert normalize_alias(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("extension", "mime", "folder", "expected"),
+    [
+        ("png", "image/png", "/OOP/23-24 Sem 1 (X)/Labs/Lab 12", True),
+        ("png", "image/png", "/OOP/Labs/Lab 12/Solution/script-dir/images", False),
+        ("jpg", "image/jpeg", "/OOP/Labs/docs/resources", False),
+        ("pdf", "application/pdf", "/OOP/Labs/docs/resources", True),
+        ("png", "image/png", "", True),
+    ],
+)
+def test_images_in_asset_folders_are_not_study_material(
+    extension: str, mime: str, folder: str, expected: bool
+) -> None:
+    assert is_indexable(extension, mime, folder) is expected

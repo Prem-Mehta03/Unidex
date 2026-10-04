@@ -9,7 +9,7 @@ that later stages (LLM, Google login) will use.
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -19,6 +19,34 @@ from unidex.exceptions import ConfigError
 DEFAULT_DB_PATH = "data/unidex.db"
 DEFAULT_LOG_LEVEL = "INFO"
 VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+DEFAULT_REQUESTS_PER_MINUTE = 5
+DEFAULT_REQUESTS_PER_DAY = 20
+
+
+def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
+    """Read a whole number of at least 1 from the environment mapping.
+
+    Args:
+        env: Variable names and values.
+        name: Variable to read.
+        default: Value used when the variable is absent or blank.
+
+    Returns:
+        The parsed number.
+
+    Raises:
+        ConfigError: If the value is not a whole number of at least 1.
+    """
+    raw = env.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a whole number (got {raw!r})") from exc
+    if value < 1:
+        raise ConfigError(f"{name} must be at least 1 (got {value})")
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,10 +56,19 @@ class Settings:
     Attributes:
         db_path: Location of the SQLite database file.
         log_level: Logging level name (see ``VALID_LOG_LEVELS``).
+        gemini_api_key: Gemini API key, or ``None`` when not configured. Hidden
+            from ``repr`` so it cannot leak into logs or error messages.
+        gemini_model: Model id copied from AI Studio, or ``None``.
+        llm_requests_per_minute: Free-tier requests-per-minute limit.
+        llm_requests_per_day: Free-tier requests-per-day limit.
     """
 
     db_path: Path
     log_level: str
+    gemini_api_key: str | None = field(default=None, repr=False)
+    gemini_model: str | None = None
+    llm_requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
+    llm_requests_per_day: int = DEFAULT_REQUESTS_PER_DAY
 
     @classmethod
     def from_mapping(cls, env: Mapping[str, str]) -> "Settings":
@@ -58,7 +95,18 @@ class Settings:
         if not db_path:
             raise ConfigError("UNIDEX_DB_PATH must not be empty")
 
-        return cls(db_path=Path(db_path), log_level=log_level)
+        return cls(
+            db_path=Path(db_path),
+            log_level=log_level,
+            gemini_api_key=env.get("GEMINI_API_KEY", "").strip() or None,
+            gemini_model=env.get("GEMINI_MODEL", "").strip() or None,
+            llm_requests_per_minute=_positive_int(
+                env, "LLM_REQUESTS_PER_MINUTE", DEFAULT_REQUESTS_PER_MINUTE
+            ),
+            llm_requests_per_day=_positive_int(
+                env, "LLM_REQUESTS_PER_DAY", DEFAULT_REQUESTS_PER_DAY
+            ),
+        )
 
 
 def load_settings(env_file: Path | None = None) -> Settings:

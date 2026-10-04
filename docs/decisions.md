@@ -87,3 +87,55 @@ machine before quoting any figure.
   the year `2024` does not match the folder `24-25`; `question paper` is not linked to `QP`;
   `digital design` is not linked to `DD`; path words from another course's folder can outrank
   the right file (`m3 compre solution` surfaces DD lab-compre files).
+
+## Metadata extraction (Stage 3)
+
+Data: all four exports loaded (1,576 files, 869 searchable after skipping lab web-page images).
+`DD` and `M3` are still the 500-row export, so they are incomplete; `OOP`, `LCS` and `DISCO` are
+under the cap and complete.
+
+- **Rules first, model last.** Rules classify 857 of 869 searchable files without any model call;
+  the other 12 fit in one Gemini request. The app must keep working with zero LLM calls, so
+  `--llm none` is the default.
+- **Each decision carries a confidence.** Explicit keyword in the name 0.95; folder name 0.85;
+  a guess 0.6 or less. A file's confidence is its weakest decision. Below 0.7 (or any unknown
+  field that matters) the file goes to the review queue.
+- **Year is the hardest field.** A folder such as `Past Material` sits inside one year's folder
+  but holds papers from older years, so the folder year is ignored there; the year comes from the
+  file name (`Quiz 1 2018`, `LiCS1617...`) or stays unknown. A lone year in a name (`2018`) is
+  weak evidence and a span (`15-16`) is strong. `Lecture-16-17` is a lecture range, not a year.
+- **New vocabulary** found in the data: exam type `test` (old "Test 1" papers: not assumed to be
+  quizzes), `lab_quiz` (OOP lab quizzes, LCS lab tests); document types `assignment`, `handout`,
+  `textbook`, `grade_stats` (the "Av Details" docs and the LCS "Insights" marks distributions);
+  flags `is_makeup`, `has_solution`; `syllabus_scope` (`pre_midsem` / `post_midsem`, read from
+  slide folders such as `Danumjaya (Pre Midsem)`). Scope is what "I have a midsem" will filter on.
+- **Query-time implication.** `test` and `quiz` should be treated as related when the chat
+  parser (Stage 5) turns "quiz" into a filter.
+- **Language model:** Gemini over plain HTTPS, key in a request header, never logged. Many files
+  per request. The model may only fill fields the rules left unknown; it never overwrites a rule.
+  Its output is validated strictly (JSON array, allowed values only, ids it was given); bad items
+  are dropped one by one. File names are treated as untrusted text. Its answers are marked
+  `llm`, get confidence 0.65 and always appear in the review queue. Answers are stored, so a
+  re-run does not spend requests again.
+- **Daily budget** is stored in the database (so a restart cannot reset it) and counted per
+  Pacific-time day, which is when Google resets free-tier quotas. A failed request still counts.
+  On any provider error the model phase stops and the remaining files stay in the review queue.
+- **Human corrections win.** `review_queue import` marks rows `manual` and `reviewed`; later
+  automatic runs skip them. The import validates the whole file first and applies it in one
+  transaction.
+- **Student ids.** One file in the LCS 21-22 compre folder is named after a student id
+  (`2020A7PS0114G`), probably a student's answer script. It is flagged in the review queue;
+  decide whether it should be shown at all.
+- **Schema version 2.** `documents` gained columns and wider CHECK lists; because SQLite cannot
+  alter a CHECK, the empty old table is dropped and recreated (refusing if it has rows).
+- **Not done yet:** duplicate detection (the same file sits in two folders: `Evals` and
+  `Evals/Lab Tests`), instructor-name normalisation (`Neena` vs `Neena Goveas`, `RPJ` vs
+  `Ramprasad S. Joshi`), reading file contents.
+
+### Honest limits
+
+- Gemini integration was written to the documented REST shape and tested against a fake
+  transport only. It has not been run against the real service from here (no key, and the
+  sandbox cannot reach it). The first real run is the real test: expect to adjust the model id or
+  response handling.
+- No accuracy figure is claimed yet. The label sheet exists to produce one; see below.

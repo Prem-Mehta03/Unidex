@@ -4,8 +4,8 @@ A web app that unifies scattered campus department drives (PYQs, notes, slides) 
 searchable index, with a chat interface and result cards that link back to the original files.
 Search structures (inverted index, BM25, trie) are written from scratch.
 
-**Status:** Stage 2 of 7 (search core: tokenizer, inverted index, BM25, trie, benchmark). The LLM
-extractor, API and UI come in later stages.
+**Status:** Stage 3 of 7 (metadata extraction: rules, optional Gemini for leftovers, review queue,
+labelling sheet). The API and UI come in later stages.
 
 ## Setup (Windows, PowerShell)
 
@@ -30,6 +30,24 @@ python scripts/search_cli.py --suggest lap
 python scripts/benchmark.py
 ```
 
+## Extract metadata (Stage 3)
+
+```powershell
+python scripts/extract_metadata.py                 # rules only: no LLM calls at all
+python scripts/extract_metadata.py --llm gemini    # also ask Gemini about the leftovers
+python scripts/review_queue.py export              # writes data/real/review.csv
+python scripts/review_queue.py import              # stores your corrections
+python scripts/label_sheet.py make                 # ~100 files to check by hand
+python scripts/label_sheet.py score                # accuracy after you fill the sheet in
+```
+
+The app works fully with `--llm none`. Gemini is only used for the few files the rules cannot
+classify, in one batched request, and never more than `LLM_REQUESTS_PER_DAY` per day.
+Only folder paths and file names are sent to Gemini, never file contents.
+
+If you already created a database in Stage 1 or 2, running any script upgrades it automatically
+(the empty `documents` table is rebuilt). Your `raw_files` are kept.
+
 ## Checks
 
 ```powershell
@@ -46,6 +64,7 @@ mypy                # type checking
 | `src/unidex/db/` | schema and all SQL (repositories) |
 | `src/unidex/ingestion/` | read a drive listing, store raw files |
 | `src/unidex/search/` | tokenizer, inverted index, BM25, trie, search strategies |
+| `src/unidex/extraction/` | folder-path parser, rules, Gemini client, daily budget, review queue, labelling |
 | `src/unidex/models/` | plain data classes and enums |
 | `scripts/` | command-line entry points |
 | `eval/` | test queries and benchmark results |

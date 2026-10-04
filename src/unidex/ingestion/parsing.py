@@ -87,14 +87,28 @@ def file_extension(name: str) -> str:
     return PurePosixPath(name).suffix.lstrip(".").lower()
 
 
-def is_indexable(extension: str, mime_type: str) -> bool:
+_IMAGE_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "svg", "bmp", "webp"})
+# Folders that hold the pictures of a lab's web page rather than study material.
+_ASSET_FOLDERS = frozenset(
+    {"images", "image", "img", "resources", "assets", "static", "css", "js", "script-dir"}
+)
+
+
+def is_indexable(extension: str, mime_type: str, folder_path: str = "") -> bool:
     """Decide whether a file looks like study material worth searching.
 
     Args:
         extension: Lower-case extension without the dot (may be empty).
         mime_type: MIME type reported by Drive.
+        folder_path: Folder the file sits in. Pictures inside asset folders
+            (``images``, ``resources``, ...) are page decorations from lab
+            projects, not study material, so they are skipped.
 
     Returns:
         True for documents, slides and scans; False for code, archives and the like.
     """
+    if extension in _IMAGE_EXTENSIONS:
+        folders = {part.strip().lower() for part in folder_path.split("/")}
+        if folders & _ASSET_FOLDERS:
+            return False
     return extension in INDEXABLE_EXTENSIONS or mime_type in INDEXABLE_MIME_TYPES
