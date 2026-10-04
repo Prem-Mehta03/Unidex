@@ -1,0 +1,24 @@
+# Secrets: never commit these.
+.env
+
+# Local databases and real (non-public) drive exports.
+*.db
+*.db-journal
+data/real/*
+!data/real/.gitkeep
+
+# Python / tooling caches.
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors / OS.
+.vscode/
+.idea/
+.DS_Store

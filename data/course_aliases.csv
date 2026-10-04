@@ -1,0 +1,11 @@
+alias,course_code,course_name,department,verified
+OOP,CS F213,Object Oriented Programming,CS,false
+DD,CS F215,Digital Design,CS,false
+Digital Design,CS F215,Digital Design,CS,false
+M3,MATH F211,Mathematics III,MATH,false
+Maths 3,MATH F211,Mathematics III,MATH,false
+LCS,CS F214,Logic in Computer Science,CS,false
+Logic in CS,CS F214,Logic in Computer Science,CS,false
+DISCO,CS F222,Discrete Structures for Computer Science,CS,false
+Discrete Structures,CS F222,Discrete Structures for Computer Science,CS,false
+DSA,CS F211,Data Structures and Algorithms,CS,false
