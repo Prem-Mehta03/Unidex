@@ -1,0 +1,29 @@
+query,must_contain_name,must_contain_path,note
+m3 midsem solutions,midsem solution,M3,exact words appear in the file name
+laplace transform guide,laplace,Topicwise,name plus folder; slides on Laplace also exist
+legendre polynomials,legendre,,topic in the file name
+m3 quiz 2 key 25-26,quiz 2 key,25-26,quiz number and year
+dd midsem solution,midsem solution,/DD/,course nickname in the path
+dd compre question paper,compre qp,/DD/,the phrase question paper is not linked to QP; found through dd and compre
+digital design cheatsheet,cheatsheet,/DD/,alias "digital design" = DD is unknown; found through the cheatsheet folder name
+fourier series notes,fourier,,topic in the file name
+bessel functions slides,bessel,Slides,folder name carries the document type
+m3 24-25 compre,compre,24-25,year in the folder name
+hypergeometric equation,hypergeometric,,topic in the file name
+m3 tutorials with solutions,,Tutorials (With Solutions),folder-level match
+formula sheet quiz,formula sheet,Evals,file inside an Evals folder
+eigenvalues,eigenvalues,,single rare topic word
+pde heat equation,heat,,topic words inside a file name
+m3 compre solution 2024,compre part b solution,M3,the year 2024 does not match the folder 24-25; lab compre files of another course compete
+m3 compre part b solution,compre part b solution,24-25,exact phrase in the file name
+quiz 1 qp,quiz 1 qp,25-26,quiz number plus QP
+lecture 12 24-25,lecture-12,24-25,number inside a hyphenated file name
+series solution of ode,series solution,,words from the file name
+first order ode applications,first order ode-applications,,hyphenated file name
+operators method,operators method,,plural form in the file name
+hge summary,hge summary,,abbreviation in the file name
+midsem question paper 23-24 m3,midsem qp,23-24,the phrase question paper is not linked to QP; year and course carry the match
+answer key quiz 1 24-25,answer_key_q1,24-25,the file says Q1 not quiz 1
+m3 formula sheet quiz 2,quiz 2 formula sheet,25-26,quiz number in the middle of the file name
+compre cheatsheet dd,comprecheatsheet,/DD/,words glued together in the file name
+wave and heat equations,wave and heat,,stopword and plural in the file name

@@ -4,8 +4,8 @@ A web app that unifies scattered campus department drives (PYQs, notes, slides) 
 searchable index, with a chat interface and result cards that link back to the original files.
 Search structures (inverted index, BM25, trie) are written from scratch.
 
-**Status:** Stage 1 of 7 (skeleton, database, ingestion). Search, LLM extractor, API and UI come
-in later stages.
+**Status:** Stage 2 of 7 (search core: tokenizer, inverted index, BM25, trie, benchmark). The LLM
+extractor, API and UI come in later stages.
 
 ## Setup (Windows, PowerShell)
 
@@ -22,6 +22,14 @@ On macOS/Linux, activate with `source .venv/bin/activate` and copy with `cp`.
 
 Run everything from the repository root.
 
+## Try the search (after loading a CSV)
+
+```powershell
+python scripts/search_cli.py "laplace transform guide"
+python scripts/search_cli.py --suggest lap
+python scripts/benchmark.py
+```
+
 ## Checks
 
 ```powershell
@@ -37,8 +45,10 @@ mypy                # type checking
 |---|---|
 | `src/unidex/db/` | schema and all SQL (repositories) |
 | `src/unidex/ingestion/` | read a drive listing, store raw files |
+| `src/unidex/search/` | tokenizer, inverted index, BM25, trie, search strategies |
 | `src/unidex/models/` | plain data classes and enums |
 | `scripts/` | command-line entry points |
+| `eval/` | test queries and benchmark results |
 | `data/sample/` | synthetic drive listing (safe to commit) |
 | `data/real/` | your real exports (git-ignored, never commit) |
 | `docs/decisions.md` | what we chose and why |
