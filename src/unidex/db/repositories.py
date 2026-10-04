@@ -649,6 +649,9 @@ class DocumentView:
         confidence: Extraction confidence, 0 to 1.
         method: ``rule``, ``llm`` or ``manual``.
         course_code: Course code such as ``CS F213``, or empty.
+        course_name: Course name such as ``Object Oriented Programming``, or empty.
+        semester: Semester number (1 or 2), or ``None`` when unknown.
+        instructor: Instructor name from the folder, or empty.
     """
 
     drive_file_id: str
@@ -664,6 +667,9 @@ class DocumentView:
     confidence: float
     method: str
     course_code: str
+    course_name: str = ""
+    semester: int | None = None
+    instructor: str = ""
 
 
 def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
@@ -679,7 +685,9 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
         """
         SELECT r.drive_file_id, r.path, r.name, r.url, d.doc_type, d.exam_type, d.exam_number,
                d.academic_year, d.is_makeup, d.has_solution, d.extraction_confidence,
-               d.extraction_method, COALESCE(c.code, '') AS course_code
+               d.extraction_method, COALESCE(c.code, '') AS course_code,
+               COALESCE(c.name, '') AS course_name, d.semester AS semester,
+               COALESCE(d.instructor, '') AS instructor
         FROM documents d
         JOIN raw_files r ON r.id = d.raw_file_id
         LEFT JOIN courses c ON c.id = d.course_id
@@ -701,4 +709,26 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
             confidence=float(row["extraction_confidence"] or 0.0),
             method=row["extraction_method"] or "",
             course_code=row["course_code"],
+            course_name=row["course_name"],
+            semester=row["semester"],
+            instructor=row["instructor"],
         )
+
+
+def load_alias_map(conn: sqlite3.Connection) -> dict[str, str]:
+    """Return every course nickname as ``{normalised alias: course code}``.
+
+    Args:
+        conn: An open connection.
+
+    Returns:
+        For example ``{"oop": "CS F213", "dd": "CS F215"}``.
+    """
+    rows = conn.execute(
+        """
+        SELECT a.alias_norm, c.code
+        FROM course_aliases a
+        JOIN courses c ON c.id = a.course_id
+        """
+    )
+    return {row["alias_norm"]: row["code"] for row in rows}

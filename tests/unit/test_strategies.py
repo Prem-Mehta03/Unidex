@@ -80,3 +80,13 @@ def test_build_corpus_skips_non_indexable_and_assigns_consecutive_ids() -> None:
 
     docs = build_corpus([raw("a", True), raw("code.v", False), raw("b", True)])
     assert [(d.doc_id, d.title) for d in docs] == [(0, "a"), (1, "b")]
+
+
+def test_allowed_ids_limits_both_strategies() -> None:
+    docs = [
+        SearchDocument(doc_id=i, title=f"laplace notes {i}", path="/x", url="u") for i in range(4)
+    ]
+    for strategy in (NaiveSearch(docs), Bm25Search(docs)):
+        found = {hit.doc_id for hit in strategy.search("laplace", allowed_ids={1, 3})}
+        assert found == {1, 3}
+        assert strategy.search("laplace", allowed_ids=set()) == []

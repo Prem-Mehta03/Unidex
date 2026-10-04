@@ -9,6 +9,8 @@ description = "Unified, searchable index of campus department drives (PYQs, note
 requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
     # zoneinfo has no time-zone data on Windows without this package.
     "tzdata>=2024.1; sys_platform == 'win32'",
 ]
@@ -16,6 +18,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "httpx>=0.27",  # used by FastAPI's TestClient
     "ruff>=0.6",
     "mypy>=1.10",
 ]

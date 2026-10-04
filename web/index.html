@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Unidex · Campus Drives</title>
+  <meta name="description" content="Search past papers, notes and slides across BITS Goa department drives.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Unidex home">
+      <span class="brand-mark" aria-hidden="true">U</span>
+      <span class="brand-name">Unidex</span>
+      <span class="pill pill-muted brand-tag">Campus Drives</span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <span class="tab tab-disabled" title="Chat arrives in Stage 5">Chat</span>
+      <span class="tab tab-active" aria-current="page">Search</span>
+      <span class="tab tab-disabled" title="Coming later">Drives</span>
+      <span class="tab tab-disabled" title="Coming later">Saved</span>
+    </nav>
+    <div class="topbar-right">
+      <span class="pill pill-ok" id="catalog-pill" hidden></span>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch colour theme"></button>
+    </div>
+  </header>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar" aria-label="Filters">
+      <div class="sidebar-head">
+        <h2 class="sidebar-title">Filters</h2>
+        <button class="btn btn-ghost" id="clear-filters" type="button">Clear all</button>
+        <button class="icon-btn sheet-close" id="close-filters" type="button" aria-label="Close filters"></button>
+      </div>
+      <div id="facet-groups"></div>
+    </aside>
+
+    <main class="content">
+      <section class="searchbox" aria-label="Search">
+        <div class="search-field">
+          <span class="search-icon" id="search-icon" aria-hidden="true"></span>
+          <input id="q" type="search" autocomplete="off" spellcheck="false" maxlength="200"
+                 placeholder="Search papers, notes and slides, e.g. “OOP midsem solutions”"
+                 role="combobox" aria-expanded="false" aria-controls="suggestions"
+                 aria-autocomplete="list" aria-label="Search the drives">
+          <kbd class="shortcut" aria-hidden="true">Ctrl K</kbd>
+          <ul class="suggestions" id="suggestions" role="listbox" hidden></ul>
+        </div>
+        <button class="btn btn-soft filters-toggle" id="open-filters" type="button">
+          <span id="filters-icon" aria-hidden="true"></span>
+          Filters <span class="count-badge" id="filters-count" hidden></span>
+        </button>
+      </section>
+
+      <section class="summary" aria-live="polite">
+        <p id="summary-text" class="summary-text"></p>
+        <div id="active-chips" class="chip-row"></div>
+      </section>
+
+      <div id="notice" class="notice" role="status" hidden></div>
+      <div id="results"></div>
+      <div class="more-wrap"><button class="btn btn-soft" id="more" type="button" hidden></button></div>
+    </main>
+  </div>
+
+  <footer class="footer">
+    <span>Unidex links to the original files in the department drives. Nothing is copied or hosted here.</span>
+    <span>Tags come from file names and folders; look for the <em>Tags unsure</em> label.</span>
+  </footer>
+
+  <script src="app.js" defer></script>
+</body>
+</html>

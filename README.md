@@ -4,8 +4,8 @@ A web app that unifies scattered campus department drives (PYQs, notes, slides) 
 searchable index, with a chat interface and result cards that link back to the original files.
 Search structures (inverted index, BM25, trie) are written from scratch.
 
-**Status:** Stage 3 of 7 (metadata extraction: rules, optional Gemini for leftovers, review queue,
-labelling sheet). The API and UI come in later stages.
+**Status:** Stage 4 of 7 (web API and search page). Chat, login and Drive sync come in later
+stages.
 
 ## Setup (Windows, PowerShell)
 
@@ -29,6 +29,17 @@ python scripts/search_cli.py "laplace transform guide"
 python scripts/search_cli.py --suggest lap
 python scripts/benchmark.py
 ```
+
+## Run the web app (Stage 4)
+
+After loading your CSVs and running `extract_metadata.py`:
+
+```powershell
+python scripts/serve.py          # then open http://127.0.0.1:8000
+```
+
+The server only listens on your own computer. The interactive API reference is at `/docs`.
+The catalog is built once at start-up, so restart the server after loading new data.
 
 ## Extract metadata (Stage 3)
 
@@ -63,7 +74,9 @@ mypy                # type checking
 |---|---|
 | `src/unidex/db/` | schema and all SQL (repositories) |
 | `src/unidex/ingestion/` | read a drive listing, store raw files |
-| `src/unidex/search/` | tokenizer, inverted index, BM25, trie, search strategies |
+| `src/unidex/search/` | tokenizer, inverted index, BM25, trie, strategies, filtered catalog, stack grouping |
+| `src/unidex/api/` | FastAPI app, JSON schemas |
+| `web/` | the search page (plain HTML, CSS and JavaScript, no build step) |
 | `src/unidex/extraction/` | folder-path parser, rules, Gemini client, daily budget, review queue, labelling |
 | `src/unidex/models/` | plain data classes and enums |
 | `scripts/` | command-line entry points |

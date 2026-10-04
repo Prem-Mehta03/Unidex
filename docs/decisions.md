@@ -139,3 +139,37 @@ under the cap and complete.
   sandbox cannot reach it). The first real run is the real test: expect to adjust the model id or
   response handling.
 - No accuracy figure is claimed yet. The label sheet exists to produce one; see below.
+
+
+## Web API and search page (Stage 4)
+
+- **Catalog in memory.** At start-up the server reads every document once and builds the BM25
+  index, the autocomplete trie and a filter index (for each facet value, the set of document ids).
+  Requests never touch the database, so they are fast and there is no SQLite threading to worry
+  about. The price: restart the server after loading new data.
+- **Filters before ranking.** Different facets combine with AND (set intersection, smallest set
+  first), values inside one facet with OR (union). BM25 receives the allowed ids, so it never
+  scores excluded documents. Ranking inside "course = OOP" fixes the problem that BM25 treats
+  "oop" as just another word.
+- **Facet counts** for a facet ignore that facet's own filter, so a student can still see and add
+  the other courses after choosing one.
+- **Course nicknames in the query** ("oop", "dd", "m3", "cs f213", "logic in cs") become a
+  course filter and are removed from the text. Shown as a chip that can be removed ("search the
+  words as typed instead"). If the student already picked a course in the sidebar, that choice
+  wins; a nickname for the same course is just dropped from the text. Nicknames come from the
+  `course_aliases` table, which is still unverified (`verified = false`), so check
+  `data/course_aliases.csv`.
+- **Stacks.** Hits are grouped by course and kind. A paper and its solution share a stack per exam
+  type ("Object Oriented Programming · Midsem papers"); every other document type is its own kind.
+  Stacks are ordered by their best BM25 score; papers inside a stack read newest first, other
+  material best match first. Files whose exam is unknown share one "Exam papers" stack.
+- **Honest labels.** A card shows "Checked" when a human reviewed the tags and "Tags unsure" when
+  nobody did and confidence is below 0.7.
+- **Safety.** The page inserts text with `textContent` only; links are shown only if they start
+  with `http(s)://` (checked on the server and in the browser); links open with
+  `rel="noopener noreferrer"`. A Content-Security-Policy allows only our own scripts and Google
+  Fonts. There is no login yet: do not expose the server beyond your own computer until Stage 6.
+- **Not in Stage 4:** the chat tab, "Wrong info?" / "Broken link?" reports (they need the reports
+  table and login), search logging, duplicate collapsing, a relative-score cut-off for weak BM25
+  matches. A three-word query can still match hundreds of files through its weakest word; stacks
+  put the best first and "Show more stacks" pages the rest.
