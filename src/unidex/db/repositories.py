@@ -226,6 +226,50 @@ class RawFileRepository(BaseRepository):
         inserted = self.count() - before
         return UpsertCounts(inserted=inserted, updated=len(params) - inserted)
 
+    def count_for_source(self, source_id: int) -> int:
+        """Count the files stored for one source.
+
+        Args:
+            source_id: The source's primary key.
+        """
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS n FROM raw_files WHERE source_id = ?", (source_id,)
+        ).fetchone()
+        return int(row["n"])
+
+    def retire_unseen(self, source_id: int, seen_at: str) -> tuple[int, int]:
+        """Hide documents whose file vanished from a source and restore ones that came back.
+
+        A file counts as vanished when the listing at ``seen_at`` did not include it, so its
+        ``last_seen_at`` is older than ``seen_at``. Vanished documents get
+        ``link_status = 'broken'`` and are left out of search; documents that are listed
+        again get ``'ok'``. Rows are never deleted, so reports and reviews keep their target.
+
+        Args:
+            source_id: The source that was just listed in full.
+            seen_at: ISO-8601 UTC timestamp of that listing.
+
+        Returns:
+            ``(newly hidden, restored)``.
+        """
+        hidden = self._conn.execute(
+            """
+            UPDATE documents SET link_status = 'broken'
+            WHERE link_status != 'broken' AND raw_file_id IN (
+                SELECT id FROM raw_files WHERE source_id = ? AND last_seen_at < ?)
+            """,
+            (source_id, seen_at),
+        ).rowcount
+        restored = self._conn.execute(
+            """
+            UPDATE documents SET link_status = 'ok'
+            WHERE link_status = 'broken' AND raw_file_id IN (
+                SELECT id FROM raw_files WHERE source_id = ? AND last_seen_at >= ?)
+            """,
+            (source_id, seen_at),
+        ).rowcount
+        return hidden, restored
+
     def count(self, indexable_only: bool = False) -> int:
         """Count stored files.
 
@@ -681,7 +725,8 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
         conn: An open connection.
 
     Yields:
-        One :class:`DocumentView` per document, ordered by path then name.
+        One :class:`DocumentView` per document whose file still exists in Drive
+        (documents marked ``broken`` by a sync are left out), ordered by path then name.
     """
     cursor = conn.execute(
         """
@@ -694,6 +739,7 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
         FROM documents d
         JOIN raw_files r ON r.id = d.raw_file_id
         LEFT JOIN courses c ON c.id = d.course_id
+        WHERE d.link_status != 'broken'
         ORDER BY r.path, r.name
         """
     )

@@ -70,7 +70,7 @@ class LoginStart:
     verifier: str
 
 
-def _challenge(verifier: str) -> str:
+def pkce_challenge(verifier: str) -> str:
     """Return the PKCE S256 challenge for a verifier."""
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
@@ -146,7 +146,7 @@ class GoogleOAuth:
             "scope": "openid email profile",
             "state": state,
             "nonce": nonce,
-            "code_challenge": _challenge(verifier),
+            "code_challenge": pkce_challenge(verifier),
             "code_challenge_method": "S256",
             "prompt": "select_account",
         }

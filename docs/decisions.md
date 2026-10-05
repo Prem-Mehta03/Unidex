@@ -233,3 +233,27 @@ under the cap and complete.
   per hour. Reports never change the index by themselves; a person reads them.
 - **Hosting caveat.** Free hosts such as Render wipe local files on every deploy, which would
   delete reports and logs stored in SQLite. Decide before deploying (see Stage 6 deploy notes).
+
+
+## Drive sync (Stage 6b)
+
+- **Direct REST calls, no Google client library.** The Drive `files.list` endpoint is one GET;
+  `httpx2` plus a small retry loop (429/5xx and rate-limit 403s, 1-2-4-8 second pauses) is easier
+  to test with a fake transport than the large official library.
+- **Read-only scope** (`drive.readonly`), refresh token in a git-ignored file with owner-only
+  permissions. In Testing mode Google expires it after 7 days; the error message says so.
+- **A Desktop-app OAuth client for syncing, separate from the website's Web client.** Loopback
+  redirects need no registered addresses, and the website never holds Drive access.
+- **Same shape as the CSV export.** Paths are folder names below the chosen root, names kept
+  verbatim (the export has folders like "Midsem " with a trailing space). `--compare` checks a
+  fresh listing against the old CSV by Drive id, folder path and name before anything is written.
+- **A failed listing writes nothing.** The whole tree is read before the transaction opens; any
+  folder that still fails after retries aborts the run.
+- **Vanished files are hidden, not deleted.** A complete Drive listing marks documents whose
+  file was not seen as `broken` (left out of search) and restores them if they return, so
+  reports and reviews keep their target. A listing under half of a source of 20+ files is
+  refused (probably lost permission or a partial read) unless `--force`.
+- **Shortcuts** to folders are followed once each (loops end); shortcuts to files are listed
+  as the target file.
+- **Not tested against real Drive** from the build sandbox; all behaviour is covered with a faked
+  Drive API, so run `--dry-run --compare` first.

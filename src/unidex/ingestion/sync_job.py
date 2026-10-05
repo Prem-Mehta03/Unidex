@@ -8,9 +8,15 @@ from datetime import UTC, datetime
 
 from unidex.db.connection import transaction
 from unidex.db.repositories import DepartmentRepository, RawFileRepository, SourceRepository
+from unidex.exceptions import IngestionError
 from unidex.ingestion.file_source import FileSource
 
 logger = logging.getLogger(__name__)
+
+# A listing that has lost more than half of a big source is far more likely to be a
+# permissions problem or a partial read than a real clean-up, so it is refused.
+MIN_KEEP_RATIO = 0.5
+GUARD_MIN_FILES = 20
 
 
 def _utc_now() -> datetime:
@@ -27,12 +33,16 @@ class SyncResult:
         inserted: Files that were new.
         updated: Files that were already known and got refreshed.
         indexable: Files in the listing flagged as searchable study material.
+        retired: Documents hidden because their file is no longer in the listing.
+        restored: Documents shown again because their file is back in the listing.
     """
 
     seen: int
     inserted: int
     updated: int
     indexable: int
+    retired: int = 0
+    restored: int = 0
 
 
 class SyncJob:
@@ -45,6 +55,9 @@ class SyncJob:
         department_name: str,
         source_label: str,
         clock: Callable[[], datetime] = _utc_now,
+        *,
+        retire_missing: bool = False,
+        force: bool = False,
     ) -> None:
         """Configure a sync run.
 
@@ -54,12 +67,18 @@ class SyncJob:
             department_name: Department that owns the drive, e.g. ``"CS"``.
             source_label: Unique label for this drive, e.g. ``"CS archive"``.
             clock: Returns the current time; replaced in tests for determinism.
+            retire_missing: Treat the listing as complete: hide documents whose file is no
+                longer in it. Leave off for partial listings such as a CSV of one folder.
+            force: Skip the safety check that refuses a listing that lost over half of a
+                source.
         """
         self._conn = conn
         self._source = source
         self._department_name = department_name
         self._source_label = source_label
         self._clock = clock
+        self._retire_missing = retire_missing
+        self._force = force
 
     def run(self) -> SyncResult:
         """Fetch the listing and store it.
@@ -82,7 +101,23 @@ class SyncJob:
             department_id = DepartmentRepository(self._conn).get_or_create(self._department_name)
             sources = SourceRepository(self._conn)
             source_id = sources.get_or_create(department_id, self._source_label)
-            counts = RawFileRepository(self._conn).upsert_many(source_id, files, now)
+            raw_files = RawFileRepository(self._conn)
+            known = raw_files.count_for_source(source_id)
+            if (
+                self._retire_missing
+                and not self._force
+                and known >= GUARD_MIN_FILES
+                and len(files) < known * MIN_KEEP_RATIO
+            ):
+                raise IngestionError(
+                    f"The new listing has {len(files)} files but {known} are stored for "
+                    f"{self._source_label!r}. That looks like a partial listing or a lost "
+                    "permission, so nothing was changed. Use --force if it is intended."
+                )
+            counts = raw_files.upsert_many(source_id, files, now)
+            retired = restored = 0
+            if self._retire_missing:
+                retired, restored = raw_files.retire_unseen(source_id, now)
             sources.mark_synced(source_id, now)
 
         result = SyncResult(
@@ -90,13 +125,18 @@ class SyncJob:
             inserted=counts.inserted,
             updated=counts.updated,
             indexable=sum(1 for f in files if f.is_indexable),
+            retired=retired,
+            restored=restored,
         )
         logger.info(
-            "Sync of %r finished: %d seen, %d new, %d updated, %d indexable",
+            "Sync of %r finished: %d seen, %d new, %d updated, %d indexable, "
+            "%d hidden, %d restored",
             self._source_label,
             result.seen,
             result.inserted,
             result.updated,
             result.indexable,
+            result.retired,
+            result.restored,
         )
         return result

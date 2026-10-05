@@ -1,6 +1,10 @@
 # Secrets: never commit these.
 .env
 
+# Google sign-in tokens (can read your Drive): never commit.
+data/drive_token.json
+*token*.json
+
 # Local databases and real (non-public) drive exports.
 *.db
 *.db-journal

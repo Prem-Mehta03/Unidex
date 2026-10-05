@@ -22,6 +22,7 @@ VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 DEFAULT_REQUESTS_PER_MINUTE = 5
 DEFAULT_REQUESTS_PER_DAY = 20
 DEFAULT_EMAIL_DOMAIN = "goa.bits-pilani.ac.in"
+DEFAULT_DRIVE_TOKEN_PATH = "data/drive_token.json"  # noqa: S105 (a file location)
 MIN_SESSION_SECRET_LENGTH = 32
 TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
 
@@ -71,6 +72,9 @@ class Settings:
         allowed_emails: Individual addresses that may also sign in (for example the
             developer's own account), exact match only.
         require_login: When true the server refuses to start without login settings.
+        drive_client_id: OAuth client id (type *Desktop app*) used to read the drives, or ``None``.
+        drive_client_secret: Its secret (hidden from ``repr``), or ``None``.
+        drive_token_path: Where the Drive refresh token is stored (git-ignored).
         public_url: Address people use to reach the site, e.g. ``https://unidex.example``;
             used to build the Google redirect address. ``None`` means "work it out per request".
     """
@@ -88,6 +92,9 @@ class Settings:
     allowed_emails: tuple[str, ...] = ()
     require_login: bool = False
     public_url: str | None = None
+    drive_client_id: str | None = None
+    drive_client_secret: str | None = field(default=None, repr=False)
+    drive_token_path: Path = Path(DEFAULT_DRIVE_TOKEN_PATH)
 
     @property
     def login_configured(self) -> bool:
@@ -158,6 +165,11 @@ class Settings:
             ),
             require_login=require_login,
             public_url=public_url,
+            drive_client_id=env.get("DRIVE_CLIENT_ID", "").strip() or None,
+            drive_client_secret=env.get("DRIVE_CLIENT_SECRET", "").strip() or None,
+            drive_token_path=Path(
+                env.get("DRIVE_TOKEN_PATH", "").strip() or DEFAULT_DRIVE_TOKEN_PATH
+            ),
         )
         if settings.require_login and not settings.login_configured:
             raise ConfigError(
