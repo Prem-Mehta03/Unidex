@@ -1,0 +1,42 @@
+message,previous_message,kind,courses,exam_types,materials,years,recent_years,topics,quiz_number,note
+OOP midsem papers,,confirm,CS F213,midsem,papers,,,,,plain case
+I need dd compre pyqs and solutions,,confirm,CS F215,compre,papers;solutions,,,,,nickname plus pyq slang
+last 3 years compre papers for oop,,confirm,CS F213,compre,papers,,3,,,relative years
+m3 quiz 2 solutions,,confirm,MATH F211,quiz,solutions,,,,2,quiz number
+notes on laplace transform for m3,,confirm,MATH F211,,notes,,,laplace transform,,topic
+lcs midsem 2023,,confirm,CS F214,midsem,default,2023,,,,calendar year read as academic year
+Can you show me slides for discrete structures?,,confirm,CS F222,,slides,,,,,full course name
+disco midsem and compre papers,,confirm,CS F222,midsem;compre,papers,,,,,two exams
+oop,,confirm,CS F213,,default,,,,,course only
+I want everything for OOP midsem preparation specifically inheritance and polymorphism notes,,confirm,CS F213,midsem,all,,,inheritance;polymorphism,,"stitch example, two topics"
+dd tutorials with solutions,,confirm,CS F215,,tutorials;solutions,,,,,
+logic in computer science compre 22-23,,confirm,CS F214,compre,default,2022,,,,short year span
+previous year papers of digital design,,confirm,CS F215,,papers,,,,,previous year means papers
+hey,,smalltalk,,,,,,,,
+thanks!,,smalltalk,,,,,,,,
+help,,smalltalk,,,,,,,,
+midsem papers,,clarify,,midsem,papers,,,,,course missing: must ask
+I have a midsem on Stochastic Calculus and Finance and I need PYQ and Notes on XYZ topics,,clarify,,midsem,papers;notes,,,xyz,,"user's own example; course not indexed, XYZ is the only topic"
+os midsem pyqs,,clarify,,midsem,papers,,,,,course not indexed: must ask and not invent a topic
+object oriented programming lab compre,,confirm,CS F213,lab_compre,default,,,,,
+oop test 1,,confirm,CS F213,test,default,,,,1,
+pls send me all oop notes and slides,,confirm,CS F213,,notes;slides,,,,,
+dd midsems 2021 2022 2023,,confirm,CS F215,midsem,default,2021;2022;2023,,,,several years
+cs f213 midsem 2024-25 solutions,,confirm,CS F213,midsem,solutions,2024,,,,course code and year span
+m3 compre papers latest,,confirm,MATH F211,compre,papers,,1,,,"'latest' alone means newest year"
+what was the last year's oop compre,,confirm,CS F213,compre,default,,1,,,
+need m3 midterm solutions,,confirm,MATH F211,midsem,solutions,,,,,midterm is midsem
+endsem papers dd,,confirm,CS F215,compre,papers,,,,,endsem is compre
+discrete maths pyq,,confirm,CS F222,,papers,,,,,"student wording not in the alias list: tests unknown nicknames"
+oop quiz 3 solutions 2023,,confirm,CS F213,quiz,solutions,2023,,,3,
+compre pyq for logic in cs only 2019 and 2020,,confirm,CS F214,compre,papers,2019;2020,,,,
+oop assignments,,confirm,CS F213,,assignments,,,,,
+i want to prepare for the dd midsem give me notes on k-maps and flip flops,,confirm,CS F215,midsem,notes,,,k-maps;flip flops,,
+m3 midsem topics fourier series and laplace transforms,,confirm,MATH F211,midsem,default,,,fourier series;laplace transforms,,
+compre sol for lcs,,confirm,CS F214,compre,solutions,,,,,abbreviation 'sol'
+Hi I need OOP midsem PYQs,,confirm,CS F213,midsem,papers,,,,,greeting inside a request
+the quiz 1 of dd,,confirm,CS F215,quiz,default,,,,1,
+practice problems on boolean algebra for dd,,confirm,CS F215,,tutorials,,,boolean algebra,,informal wording for tutorials
+show only 2022 solutions,oop midsem papers and solutions inheritance,confirm,CS F213,midsem,solutions,2022,,inheritance,,refinement replaces material and year
+also include notes,dd compre papers,confirm,CS F215,compre,papers;notes,,,,,refinement adds
+oop,midsem papers on inheritance,confirm,CS F213,midsem,papers,,,inheritance,,answering the clarification question

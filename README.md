@@ -4,8 +4,8 @@ A web app that unifies scattered campus department drives (PYQs, notes, slides) 
 searchable index, with a chat interface and result cards that link back to the original files.
 Search structures (inverted index, BM25, trie) are written from scratch.
 
-**Status:** Stage 4 of 7 (web API and search page). Chat, login and Drive sync come in later
-stages.
+**Status:** Stage 5 of 7 (search page and chat with a confirm step). Login and Drive sync come
+in later stages.
 
 ## Setup (Windows, PowerShell)
 
@@ -40,6 +40,19 @@ python scripts/serve.py          # then open http://127.0.0.1:8000
 
 The server only listens on your own computer. The interactive API reference is at `/docs`.
 The catalog is built once at start-up, so restart the server after loading new data.
+
+## Chat (Stage 5)
+
+The **Chat** tab reads a message such as "OOP midsem papers and notes on inheritance", shows a
+form to confirm or edit (course, exam, years, topics, kinds of material), then searches.
+Reading messages uses rules only; no language-model request is needed. To measure it:
+
+```powershell
+python scripts/eval_chat.py            # scores eval/chat_messages.csv
+```
+
+Optional: if `GEMINI_API_KEY` and `GEMINI_MODEL` are set in `.env`, a message whose course the
+rules cannot find is sent to Gemini once, which may only pick from the indexed courses.
 
 ## Extract metadata (Stage 3)
 
@@ -76,6 +89,7 @@ mypy                # type checking
 | `src/unidex/ingestion/` | read a drive listing, store raw files |
 | `src/unidex/search/` | tokenizer, inverted index, BM25, trie, strategies, filtered catalog, stack grouping |
 | `src/unidex/api/` | FastAPI app, JSON schemas |
+| `src/unidex/chat/` | message parser, planner, optional Gemini course helper, parser evaluation |
 | `web/` | the search page (plain HTML, CSS and JavaScript, no build step) |
 | `src/unidex/extraction/` | folder-path parser, rules, Gemini client, daily budget, review queue, labelling |
 | `src/unidex/models/` | plain data classes and enums |

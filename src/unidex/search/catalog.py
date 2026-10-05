@@ -36,7 +36,9 @@ from unidex.search.tokenizer import tokenize
 
 FACETS = ("course", "doc_type", "exam_type", "year")
 DEFAULT_MAX_HITS = 300
-MAX_ALIAS_WORDS = 3  # longest course nickname we look for, e.g. "logic in cs"
+MAX_ALIAS_WORDS = (
+    6  # longest course name we look for, e.g. "discrete structures for computer science"
+)
 _WORD = re.compile(r"[A-Za-z0-9]+")
 
 
@@ -196,14 +198,49 @@ class Catalog:
         usable = {alias: code for alias, code in course_aliases.items() if code in known}
         for code in known:
             usable.setdefault(normalize_alias(code), code)
+            name = self._course_names.get(code, "")
+            if name:
+                usable.setdefault(normalize_alias(name), code)
         return usable
 
-    def interpret(self, query: str) -> tuple[tuple[str, ...], str]:
-        """Find course nicknames in a query and separate them from the other words.
+    def scan_courses(self, text: str) -> tuple[tuple[str, ...], str]:
+        """Find course names, nicknames and codes in free text.
 
-        Looks at runs of up to three words, longest first, so "logic in cs" is
-        one nickname rather than three words. "oop midsem solutions" becomes
-        the course ``CS F213`` plus the text "midsem solutions".
+        Looks at runs of up to :data:`MAX_ALIAS_WORDS` words, longest first, so
+        "logic in cs" is one nickname rather than three words. Each match is
+        replaced by `` | `` in the returned text, which keeps the position of
+        the gap (and all punctuation) for callers that split the rest into phrases.
+
+        Args:
+            text: What the student typed.
+
+        Returns:
+            ``(course codes found, text with the matches replaced by " | ")``.
+        """
+        matches = list(_WORD.finditer(text))
+        codes: list[str] = []
+        pieces: list[str] = []
+        cursor = 0
+        i = 0
+        while i < len(matches):
+            for size in range(min(MAX_ALIAS_WORDS, len(matches) - i), 0, -1):
+                key = normalize_alias("".join(m.group() for m in matches[i : i + size]))
+                code = self._aliases.get(key)
+                if code is not None:
+                    if code not in codes:
+                        codes.append(code)
+                    pieces.append(text[cursor : matches[i].start()])
+                    pieces.append(" | ")
+                    cursor = matches[i + size - 1].end()
+                    i += size
+                    break
+            else:
+                i += 1
+        pieces.append(text[cursor:])
+        return tuple(codes), "".join(pieces)
+
+    def interpret(self, query: str) -> tuple[tuple[str, ...], str]:
+        """Find course names in a query and return the other words.
 
         Args:
             query: What the student typed.
@@ -211,22 +248,42 @@ class Catalog:
         Returns:
             ``(course codes found, the query without those words)``.
         """
-        words = _WORD.findall(query)
-        codes: list[str] = []
-        kept: list[str] = []
-        i = 0
-        while i < len(words):
-            for size in range(min(MAX_ALIAS_WORDS, len(words) - i), 0, -1):
-                code = self._aliases.get(normalize_alias("".join(words[i : i + size])))
-                if code is not None:
-                    if code not in codes:
-                        codes.append(code)
-                    i += size
-                    break
-            else:
-                kept.append(words[i])
-                i += 1
-        return tuple(codes), " ".join(kept)
+        codes, marked = self.scan_courses(query)
+        rest = " ".join(word for word in _WORD.findall(marked))
+        return codes, rest
+
+    def course_codes(self) -> list[str]:
+        """Return every course code that has documents, sorted."""
+        return sorted(self._index["course"])
+
+    def years_for(
+        self,
+        courses: Iterable[str],
+        doc_types: Iterable[str],
+        exam_types: Iterable[str] = (),
+    ) -> list[int]:
+        """List the academic years that have documents of the given kinds.
+
+        Args:
+            courses: Course codes (empty means all courses).
+            doc_types: Document types to look at.
+            exam_types: Exam types to look at (empty means any).
+
+        Returns:
+            Years, newest first.
+        """
+        wanted_courses = set(courses)
+        wanted_types = set(doc_types)
+        wanted_exams = set(exam_types)
+        years = {
+            v.academic_year
+            for v in self._views
+            if v.academic_year is not None
+            and v.doc_type in wanted_types
+            and (not wanted_courses or v.course_code in wanted_courses)
+            and (not wanted_exams or v.exam_type in wanted_exams)
+        }
+        return sorted(years, reverse=True)
 
     def __len__(self) -> int:
         """Return the number of documents in the catalog."""

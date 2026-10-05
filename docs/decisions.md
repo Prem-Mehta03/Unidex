@@ -173,3 +173,31 @@ under the cap and complete.
   table and login), search logging, duplicate collapsing, a relative-score cut-off for weak BM25
   matches. A three-word query can still match hundreds of files through its weakest word; stacks
   put the best first and "Show more stacks" pages the rest.
+
+
+## Chat (Stage 5)
+
+- **Rules first, form second.** A message is read by rules (course via the catalog's alias scan,
+  years, exam, kind of material, quiz number; leftover words become topics). The result is a
+  small form the student confirms or edits; only then is anything searched. The model never
+  writes replies, links or file names.
+- **Stateless server.** The browser sends the last form back with each message. A message
+  changes only the fields it mentions ("show only 2022 solutions"); "also / include / add"
+  adds instead of replacing; "start over" forgets the old form. A fresh request without a
+  course therefore inherits the previous course; say "start over" to drop it.
+- **Papers and notes are searched differently.** Papers and solutions are found by exam type and
+  year (their names rarely mention topics), so topics are NOT applied to them and the card says
+  so. Notes, slides, tutorials are found by topic through BM25 on file and folder names; if no
+  name mentions the topics, all of that material is listed and the student is told.
+- **"Last N years"** counts the newest N years that have papers of the asked exam, not calendar
+  years. A lone "2023" is read as academic year 2023-24 and a note says so.
+- **Midsem-only target** hides slides marked post-midsem. Quiz and test are treated as related.
+- **Optional Gemini help** only picks a course from the indexed list when the rules found none.
+  Answers are validated, each use counts against the shared daily request budget, and the chat
+  never waits for a rate limit. The course helper has been tested only with a fake client.
+- **Measured, with caveats.** `eval/chat_messages.csv` has 41 messages I wrote, including
+  deliberately hard ones. The rules were tuned after seeing the first run, so the score is not a
+  fair held-out figure. Replace or extend it with real student messages before quoting it.
+- **Known gaps:** course wording not in the alias list ("discrete maths"), "latest" on its own,
+  unknown-course words end up as a topic, topic search inside paper contents (needs reading
+  files), a topic list split on "and" ("stochastic calculus and finance" becomes two topics).

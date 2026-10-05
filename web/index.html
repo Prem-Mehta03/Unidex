@@ -19,8 +19,8 @@
       <span class="pill pill-muted brand-tag">Campus Drives</span>
     </a>
     <nav class="tabs" aria-label="Sections">
-      <span class="tab tab-disabled" title="Chat arrives in Stage 5">Chat</span>
-      <span class="tab tab-active" aria-current="page">Search</span>
+      <a class="tab" id="tab-chat" href="#chat">Chat</a>
+      <a class="tab" id="tab-search" href="#search">Search</a>
       <span class="tab tab-disabled" title="Coming later">Drives</span>
       <span class="tab tab-disabled" title="Coming later">Saved</span>
     </nav>
@@ -43,6 +43,7 @@
     </aside>
 
     <main class="content">
+      <div id="search-view">
       <section class="searchbox" aria-label="Search">
         <div class="search-field">
           <span class="search-icon" id="search-icon" aria-hidden="true"></span>
@@ -67,6 +68,19 @@
       <div id="notice" class="notice" role="status" hidden></div>
       <div id="results"></div>
       <div class="more-wrap"><button class="btn btn-soft" id="more" type="button" hidden></button></div>
+      </div>
+
+      <div id="chat-view" hidden>
+        <div class="chat-log" id="chat-log" role="log" aria-live="polite" aria-label="Conversation"></div>
+        <div class="chat-tray">
+          <div class="chip-row try-row" id="try-row"><span class="try-label">Try asking:</span></div>
+          <form class="composer" id="composer" autocomplete="off">
+            <textarea id="chat-input" rows="1" maxlength="500" aria-label="Message"
+                      placeholder="Tell me what you are preparing for, e.g. “OOP midsem papers and notes”"></textarea>
+            <button class="btn btn-primary send-btn" id="send" type="submit" aria-label="Send">Send</button>
+          </form>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -76,5 +90,6 @@
   </footer>
 
   <script src="app.js" defer></script>
+  <script src="chat.js" defer></script>
 </body>
 </html>

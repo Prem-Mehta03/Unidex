@@ -22,11 +22,17 @@ from fastapi import FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
 
+from unidex.api.chat_routes import router as chat_router
 from unidex.api.presenter import to_facet_options, to_stack
 from unidex.api.schemas import DetectedCourse, HealthResponse, SearchResponse, SuggestResponse
+from unidex.chat.llm_resolver import LlmCourseResolver
+from unidex.chat.service import ChatService, CourseResolver
 from unidex.config import Settings, load_settings
 from unidex.db.connection import connect
-from unidex.db.repositories import iter_document_views, load_alias_map
+from unidex.db.repositories import LlmUsageRepository, iter_document_views, load_alias_map
+from unidex.exceptions import LLMRateLimitError
+from unidex.extraction.budget import LlmBudget
+from unidex.extraction.llm_client import GeminiClient
 from unidex.models.enums import DocType, ExamType
 from unidex.search.catalog import FACETS, Catalog, SearchFilters
 from unidex.search.grouping import group_into_stacks
@@ -72,10 +78,52 @@ def load_catalog(settings: Settings) -> Catalog:
     return catalog
 
 
+def build_course_resolver(settings: Settings, catalog: Catalog) -> CourseResolver | None:
+    """Create the optional language-model course helper.
+
+    Only used when ``GEMINI_API_KEY`` and ``GEMINI_MODEL`` are both set. Each use
+    counts against the shared daily request budget.
+
+    Args:
+        settings: Application settings.
+        catalog: The catalog (source of the course list).
+
+    Returns:
+        A resolver, or ``None`` when no model is configured.
+    """
+    if not (settings.gemini_api_key and settings.gemini_model):
+        return None
+    client = GeminiClient(settings.gemini_api_key, settings.gemini_model)
+
+    def acquire() -> None:
+        conn = connect(settings.db_path)
+        try:
+            budget = LlmBudget(
+                LlmUsageRepository(conn),
+                per_minute=settings.llm_requests_per_minute,
+                per_day=settings.llm_requests_per_day,
+                sleep=_refuse_to_wait,
+            )
+            budget.acquire()
+        finally:
+            conn.close()
+
+    courses = [
+        (code, catalog.course_label(code).split(" · ", 1)[-1]) for code in catalog.course_codes()
+    ]
+    return LlmCourseResolver(client, courses, acquire)
+
+
+def _refuse_to_wait(seconds: float) -> None:
+    """Chat must answer quickly, so a full minute window means 'skip the model'."""
+    raise LLMRateLimitError(f"Per-minute limit reached; not waiting {seconds:.0f}s in chat")
+
+
 def create_app(
     catalog: Catalog | None = None,
     settings: Settings | None = None,
     web_dir: Path | None = DEFAULT_WEB_DIR,
+    course_resolver: CourseResolver | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -84,6 +132,9 @@ def create_app(
             is built from the database when the server starts.
         settings: Settings used to find the database; loaded from ``.env`` if omitted.
         web_dir: Folder with the static front end; ``None`` serves the API only.
+        course_resolver: Optional language-model helper for the chat (tests pass a fake;
+            when ``None`` and the catalog is loaded from the database, one is created
+            if a Gemini key and model are configured).
 
     Returns:
         The configured FastAPI application.
@@ -91,12 +142,18 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.catalog = (
-            catalog if catalog is not None else load_catalog(settings or load_settings())
-        )
+        resolver = course_resolver
+        if catalog is not None:
+            app.state.catalog = catalog
+        else:
+            active_settings = settings or load_settings()
+            app.state.catalog = load_catalog(active_settings)
+            if resolver is None:
+                resolver = build_course_resolver(active_settings, app.state.catalog)
+        app.state.chat = ChatService(app.state.catalog, resolver)
         yield
 
-    app = FastAPI(title="Unidex", version="0.4.0", lifespan=lifespan)
+    app = FastAPI(title="Unidex", version="0.5.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def security_headers(
@@ -178,6 +235,8 @@ def create_app(
             facet: [o.model_dump() for o in to_facet_options(catalog_now.facet_options(facet))]
             for facet in FACETS
         }
+
+    app.include_router(chat_router)
 
     if web_dir is not None and web_dir.is_dir():
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")

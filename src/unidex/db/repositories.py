@@ -652,6 +652,7 @@ class DocumentView:
         course_name: Course name such as ``Object Oriented Programming``, or empty.
         semester: Semester number (1 or 2), or ``None`` when unknown.
         instructor: Instructor name from the folder, or empty.
+        syllabus_scope: ``pre_midsem``, ``post_midsem`` or empty (slides only).
     """
 
     drive_file_id: str
@@ -670,6 +671,7 @@ class DocumentView:
     course_name: str = ""
     semester: int | None = None
     instructor: str = ""
+    syllabus_scope: str = ""
 
 
 def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
@@ -687,7 +689,8 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
                d.academic_year, d.is_makeup, d.has_solution, d.extraction_confidence,
                d.extraction_method, COALESCE(c.code, '') AS course_code,
                COALESCE(c.name, '') AS course_name, d.semester AS semester,
-               COALESCE(d.instructor, '') AS instructor
+               COALESCE(d.instructor, '') AS instructor,
+               COALESCE(d.syllabus_scope, '') AS syllabus_scope
         FROM documents d
         JOIN raw_files r ON r.id = d.raw_file_id
         LEFT JOIN courses c ON c.id = d.course_id
@@ -712,6 +715,7 @@ def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
             course_name=row["course_name"],
             semester=row["semester"],
             instructor=row["instructor"],
+            syllabus_scope=row["syllabus_scope"],
         )
 
 

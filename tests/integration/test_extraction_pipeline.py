@@ -231,3 +231,24 @@ def test_exam_number_is_taken_only_for_numbered_exams() -> None:
     midsem = apply_verdict(base_meta(), LlmVerdict(DocType.PYQ, ExamType.MIDSEM, 3, False))
     assert quiz.exam_number == 3
     assert midsem.exam_number is None
+
+
+def test_document_views_carry_every_field_the_catalog_needs(loaded: sqlite3.Connection) -> None:
+    from unidex.db.repositories import iter_document_views, load_alias_map
+    from unidex.search.catalog import Catalog
+
+    ExtractionPipeline(loaded, clock=fixed_clock).run()
+    views = list(iter_document_views(loaded))
+    assert len(views) == DocumentRepository(loaded).count()
+    with_course = [v for v in views if v.course_code]
+    assert with_course
+    assert all(v.course_name for v in with_course)
+    assert all(v.syllabus_scope in {"", "pre_midsem", "post_midsem"} for v in views)
+    aliases = load_alias_map(loaded)
+    assert aliases["oop"] == "CS F213"
+    assert len(Catalog(views, course_aliases=aliases)) == len(views)
+    loaded.execute(
+        "UPDATE documents SET syllabus_scope = 'post_midsem' "
+        "WHERE id = (SELECT MIN(id) FROM documents)"
+    )
+    assert any(v.syllabus_scope == "post_midsem" for v in iter_document_views(loaded))

@@ -17,6 +17,7 @@ def make_view(
     method: str = "rule",
     url: str | None = None,
     exam_number: int | None = None,
+    syllabus_scope: str = "",
 ) -> DocumentView:
     """Build a document view with sensible defaults."""
     return DocumentView(
@@ -34,6 +35,7 @@ def make_view(
         method=method,
         course_code=course_code,
         course_name=course_name,
+        syllabus_scope=syllabus_scope,
     )
 
 
@@ -78,3 +80,49 @@ def sample_views() -> list[DocumentView]:
             method="manual",
         ),
     ]
+
+
+ALIASES = {"oop": "CS F213", "dd": "CS F215", "m3": "MATH F211"}
+
+
+def chat_views() -> list[DocumentView]:
+    """Return documents shaped like a real drive: papers over years, slides, notes."""
+    oop = {"course_code": "CS F213", "course_name": "Object Oriented Programming"}
+    dd = {"course_code": "CS F215", "course_name": "Digital Design"}
+    views = [
+        make_view(f"OOP Midsem {y}.pdf", year=y, exam_type="midsem", **oop)
+        for y in (2021, 2022, 2023, 2024)
+    ]
+    views += [
+        make_view(f"OOP Compre {y}.pdf", year=y, exam_type="compre", **oop) for y in (2022, 2023)
+    ]
+    views += [
+        make_view("OOP Midsem 2022 Solutions.pdf", year=2022, doc_type="solution", **oop),
+        make_view("OOP Quiz 1.pdf", year=2023, exam_type="test", exam_number=1, **oop),
+        make_view("OOP Quiz 2.pdf", year=2023, exam_type="quiz", exam_number=2, **oop),
+        make_view(
+            "Inheritance Lecture 3.pdf", doc_type="slides", exam_type="none", year=2023, **oop
+        ),
+        make_view(
+            "Polymorphism Lecture 4.pdf",
+            doc_type="slides",
+            exam_type="none",
+            year=2023,
+            syllabus_scope="pre_midsem",
+            **oop,
+        ),
+        make_view(
+            "Generics Lecture 9.pdf",
+            doc_type="slides",
+            exam_type="none",
+            year=2023,
+            syllabus_scope="post_midsem",
+            **oop,
+        ),
+        make_view("Java Cheatsheet.pdf", doc_type="cheatsheet", exam_type="none", year=2023, **oop),
+        make_view("DD Compre 2024.pdf", year=2024, exam_type="compre", **dd),
+        make_view("DD Compre 2025.pdf", year=2025, exam_type="compre", **dd),
+        make_view("DD Midsem 2025.pdf", year=2025, exam_type="midsem", **dd),
+        make_view("Karnaugh Maps Notes.pdf", doc_type="notes", exam_type="none", year=2025, **dd),
+    ]
+    return views

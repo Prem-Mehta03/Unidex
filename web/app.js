@@ -147,7 +147,7 @@
     for (const f of FACETS) for (const value of state.filters[f.key]) params.append(f.key, value);
     if (!state.detect) params.set('detect', '0');
     const query = params.toString();
-    const url = window.location.pathname + (query ? '?' + query : '');
+    const url = window.location.pathname + (query ? '?' + query : '') + window.location.hash;
     window.history[push ? 'pushState' : 'replaceState'](null, '', url);
   }
 
@@ -343,7 +343,7 @@
     const area = $('results');
     if (!hasQuery()) return put(area, heroView());
     if (state.stacks.length === 0) return put(area, emptyView());
-    put(area, ...state.stacks.map(stackView));
+    put(area, ...state.stacks.map((stack) => stackView(stack)));
   }
 
   function heroView() {
@@ -376,8 +376,9 @@
     return box;
   }
 
-  function stackView(stack) {
-    const open = state.open.has(stack.key);
+  function stackView(stack, openSet) {
+    const opened = openSet || state.open;
+    const open = opened.has(stack.key);
     const article = el('article', 'stack');
     article.dataset.open = String(open);
 
@@ -404,8 +405,8 @@
     body.append(...stack.files.map(cardView));
 
     head.addEventListener('click', () => {
-      const nowOpen = !state.open.has(stack.key);
-      if (nowOpen) state.open.add(stack.key); else state.open.delete(stack.key);
+      const nowOpen = !opened.has(stack.key);
+      if (nowOpen) opened.add(stack.key); else opened.delete(stack.key);
       article.dataset.open = String(nowOpen);
       head.setAttribute('aria-expanded', String(nowOpen));
       body.hidden = !nowOpen;
@@ -624,6 +625,9 @@
     loadHealth();
     runSearch(false);
   }
+
+  /* Small toolkit shared with chat.js. */
+  window.Unidex = { el, icon, put, plural, stackView, input, searchNow, state };
 
   init();
 })();
