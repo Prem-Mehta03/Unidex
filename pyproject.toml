@@ -18,7 +18,23 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+content = [
+    "pypdf>=5.0",  # reads the text layer of PDFs
+]
+ocr = [
+    "pypdf>=5.0",
+    "pypdfium2>=4.30",  # draws PDF pages as pictures
+    "pillow>=10.0",
+    "numpy>=1.26",
+    "rapidocr>=3.0",  # OCR that needs nothing but pip (works on Python 3.13)
+    "onnxruntime>=1.18",
+    "pytesseract>=0.3",  # optional alternative; also needs the Tesseract program
+]
 dev = [
+    "pypdf>=5.0",
+    "pypdfium2>=4.30",
+    "pillow>=10.0",
+    "numpy>=1.26",
     "pytest>=8.0",
     "ruff>=0.6",
     "mypy>=1.10",
@@ -54,3 +70,8 @@ convention = "google"
 python_version = "3.11"
 strict = true
 files = ["src", "scripts"]
+
+# Optional OCR packages ship no type information.
+[[tool.mypy.overrides]]
+module = ["pytesseract", "rapidocr", "onnxruntime", "pypdfium2"]
+ignore_missing_imports = true

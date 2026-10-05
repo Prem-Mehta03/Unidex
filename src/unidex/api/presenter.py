@@ -54,6 +54,16 @@ def why_matched(hit: Hit) -> str:
     Returns:
         A sentence naming the matched words, or saying the filters matched.
     """
+    if hit.source == "unreadable":
+        return (
+            "The text inside this file could not be read (scan or handwriting), so it was "
+            "not checked for your topics. Shown because its course and exam match."
+        )
+    if hit.source == "paired":
+        return "The solution for a paper that mentions your topics."
+    if hit.source == "content" and hit.matched_terms:
+        words = ", ".join(f"“{word}”" for word in hit.matched_terms)
+        return f"Mentions {words} inside the file."
     if hit.matched_terms:
         words = ", ".join(f"“{word}”" for word in hit.matched_terms)
         return f"Matches {words} in the file name or folder."

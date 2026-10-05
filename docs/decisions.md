@@ -257,3 +257,21 @@ under the cap and complete.
   as the target file.
 - **Not tested against real Drive** from the build sandbox; all behaviour is covered with a faked
   Drive API, so run `--dry-run --compare` first.
+
+
+## Reading file contents (Stage 6d)
+
+- **Hybrid reading.** A 60-PDF probe found 34 text, 12 mixed, 13 scanned, 1 error; papers are
+  the weak spot. So: text layer first (pypdf), OCR only for pages without text (at most 12 pages
+  per file, 200 DPI), and a quality gate for the rest.
+- **Quality gate.** The share of word-like tokens must be at least 0.65 and at least half the
+  pages need text. Handwriting yields garbled text (0.3 to 0.6) and is stored as `none` rather
+  than polluting search.
+- **Stored in SQLite** (`document_text`), capped at 60k characters, 40 pages per file. One row
+  per file, saved immediately, so runs resume; a file is re-read when its Drive modified time
+  changes. Download failures are not stored and are retried.
+- **Papers.** Matched by content first, then the solutions that belong to a matched paper, then
+  unreadable papers labelled unchecked. Readable papers that do not mention the topic are left out.
+- **Known limits.** Handwritten notes and solutions stay unsearchable; maths symbols extract
+  poorly; `.pptx` is not read; name-based and content-based BM25 scores are mixed on different
+  scales; the free-text Search tab does not use content yet. The text deploys with the database.

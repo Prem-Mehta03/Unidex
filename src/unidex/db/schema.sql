@@ -101,6 +101,19 @@ CREATE TABLE IF NOT EXISTS review_queue (
     resolved_at TEXT
 );
 
+-- Text read from inside files (Stage 6d), used only to match topics. 'pdf_text' came from the
+-- file's text layer, 'ocr' from reading page pictures, 'none' means nothing usable was found
+-- (a scan, handwriting or an unreadable file); those rows are kept so the file is not read again.
+CREATE TABLE IF NOT EXISTS document_text (
+    document_id     INTEGER PRIMARY KEY REFERENCES documents (id) ON DELETE CASCADE,
+    method          TEXT NOT NULL CHECK (method IN ('pdf_text', 'ocr', 'none')),
+    quality         REAL NOT NULL CHECK (quality BETWEEN 0 AND 1),
+    pages           INTEGER NOT NULL DEFAULT 0,
+    text            TEXT NOT NULL DEFAULT '',
+    source_modified TEXT,                          -- the file's modified date when it was read
+    created_at      TEXT NOT NULL
+);
+
 -- How many language-model requests were made per day, so the free-tier daily
 -- limit survives restarts. day is the date in the provider's quota time zone.
 CREATE TABLE IF NOT EXISTS llm_usage (

@@ -10,7 +10,7 @@ or fail together.
 """
 
 import sqlite3
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date
 
@@ -718,6 +718,56 @@ class DocumentView:
     syllabus_scope: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class FileKindRow:
+    """One document's file type, for planning content extraction.
+
+    Attributes:
+        drive_file_id: Drive id of the file.
+        name: File name.
+        extension: Lower-case extension without the dot.
+        doc_type: Document type value, e.g. ``pyq``.
+        course_code: Course code, or empty.
+    """
+
+    drive_file_id: str
+    name: str
+    extension: str
+    doc_type: str
+    course_code: str
+
+
+def list_file_kinds(conn: sqlite3.Connection) -> list[FileKindRow]:
+    """List every visible document with its file extension and type.
+
+    Args:
+        conn: An open connection.
+
+    Returns:
+        One row per document that has not been hidden as gone from Drive.
+    """
+    rows = conn.execute(
+        """
+        SELECT r.drive_file_id, r.name, r.extension, d.doc_type, COALESCE(c.code, '') AS code
+        FROM documents d
+        JOIN raw_files r ON r.id = d.raw_file_id
+        LEFT JOIN courses c ON c.id = d.course_id
+        WHERE d.link_status != 'broken'
+        ORDER BY r.path, r.name
+        """
+    ).fetchall()
+    return [
+        FileKindRow(
+            drive_file_id=r["drive_file_id"],
+            name=r["name"],
+            extension=r["extension"],
+            doc_type=r["doc_type"],
+            course_code=r["code"],
+        )
+        for r in rows
+    ]
+
+
 def iter_document_views(conn: sqlite3.Connection) -> Iterator[DocumentView]:
     """Yield every document joined with its raw file and course code.
 
@@ -928,3 +978,120 @@ class SearchLogRepository(BaseRepository):
         """
         cursor = self._conn.execute("DELETE FROM search_logs WHERE created_at < ?", (cutoff,))
         return cursor.rowcount
+
+
+@dataclass(frozen=True, slots=True)
+class ReadTask:
+    """A document whose contents still need to be read.
+
+    Attributes:
+        document_id: Primary key in ``documents``.
+        drive_file_id: Drive id of the file.
+        name: File name.
+        modified_on: The file's modified date (ISO text), or ``None``.
+    """
+
+    document_id: int
+    drive_file_id: str
+    name: str
+    modified_on: str | None
+
+
+class DocumentTextRepository(BaseRepository):
+    """Text read from inside files (``document_text`` table)."""
+
+    def pending(self, doc_types: Collection[str], *, force: bool = False) -> list[ReadTask]:
+        """List PDF documents that have no stored text yet, or whose file changed since.
+
+        Args:
+            doc_types: Only documents of these types.
+            force: Also include documents that already have text.
+
+        Returns:
+            Tasks ordered by path then name.
+        """
+        if not doc_types:
+            return []
+        marks = ",".join("?" for _ in doc_types)
+        stale = (
+            "" if force else "AND (t.document_id IS NULL OR t.source_modified IS NOT r.modified_on)"
+        )
+        rows = self._conn.execute(
+            f"""
+            SELECT d.id, r.drive_file_id, r.name, r.modified_on
+            FROM documents d
+            JOIN raw_files r ON r.id = d.raw_file_id
+            LEFT JOIN document_text t ON t.document_id = d.id
+            WHERE r.extension = 'pdf' AND d.link_status != 'broken'
+              AND d.doc_type IN ({marks}) {stale}
+            ORDER BY r.path, r.name
+            """,  # noqa: S608 - only "?" placeholders and fixed text are formatted in
+            tuple(doc_types),
+        ).fetchall()
+        return [
+            ReadTask(int(r["id"]), r["drive_file_id"], r["name"], r["modified_on"]) for r in rows
+        ]
+
+    def save(
+        self,
+        document_id: int,
+        method: str,
+        quality: float,
+        pages: int,
+        text: str,
+        source_modified: str | None,
+        now: str,
+    ) -> None:
+        """Store (or replace) the text read from one document.
+
+        Args:
+            document_id: Primary key in ``documents``.
+            method: ``pdf_text``, ``ocr`` or ``none``.
+            quality: 0 to 1 (see ``content.quality``).
+            pages: Pages in the file.
+            text: The text (empty when ``method`` is ``none``).
+            source_modified: The file's modified date when it was read.
+            now: UTC time as ISO text.
+        """
+        self._conn.execute(
+            """
+            INSERT INTO document_text
+                (document_id, method, quality, pages, text, source_modified, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (document_id) DO UPDATE SET
+                method = excluded.method, quality = excluded.quality, pages = excluded.pages,
+                text = excluded.text, source_modified = excluded.source_modified,
+                created_at = excluded.created_at
+            """,
+            (document_id, method, quality, pages, text, source_modified, now),
+        )
+
+    def counts_by_method(self) -> dict[str, int]:
+        """Return how many documents were read with each method."""
+        rows = self._conn.execute(
+            "SELECT method, COUNT(*) AS n FROM document_text GROUP BY method"
+        ).fetchall()
+        return {r["method"]: int(r["n"]) for r in rows}
+
+
+def load_searchable_texts(conn: sqlite3.Connection, min_quality: float) -> dict[str, str]:
+    """Load the text of every visible document that was read well enough to search.
+
+    Args:
+        conn: An open connection.
+        min_quality: Texts below this quality (0 to 1) are left out.
+
+    Returns:
+        ``{drive file id: text}``.
+    """
+    rows = conn.execute(
+        """
+        SELECT r.drive_file_id, t.text
+        FROM document_text t
+        JOIN documents d ON d.id = t.document_id
+        JOIN raw_files r ON r.id = d.raw_file_id
+        WHERE t.method != 'none' AND t.quality >= ? AND d.link_status != 'broken'
+        """,
+        (min_quality,),
+    ).fetchall()
+    return {r["drive_file_id"]: r["text"] for r in rows}

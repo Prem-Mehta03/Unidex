@@ -25,6 +25,8 @@ from dataclasses import dataclass, field, replace
 from unidex.db.repositories import DocumentView
 from unidex.models.search import SearchDocument
 from unidex.normalize import normalize_alias
+from unidex.search.bm25 import Bm25Scorer
+from unidex.search.inverted_index import InvertedIndex
 from unidex.search.labels import (
     DOC_TYPE_LABELS,
     EXAM_TYPE_LABELS,
@@ -111,12 +113,17 @@ class Hit:
     Attributes:
         doc: The document and its metadata.
         score: BM25 score, or 0.0 when the search was filter-only.
-        matched_terms: Query words found in the file name or folder path.
+        matched_terms: Query words found in the file name or folder path, or (for
+            ``source="content"``) inside the file.
+        source: How the file matched: ``name`` (file name or folder), ``content`` (words
+            inside the file) or ``unreadable`` (the file's contents could not be read, so it
+            is listed only because its course, exam and year match).
     """
 
     doc: DocumentView
     score: float
     matched_terms: tuple[str, ...] = ()
+    source: str = "name"
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +159,21 @@ class CatalogResult:
     detected_courses: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ContentResult:
+    """The outcome of searching inside files.
+
+    Attributes:
+        matched: Files whose text mentions the query words, best first.
+        unreadable: Files that fit the filters but whose text could not be read, newest first.
+        readable_total: Files that fit the filters and have readable text (matched or not).
+    """
+
+    matched: list[Hit]
+    unreadable: list[Hit]
+    readable_total: int
+
+
 class Catalog:
     """Searchable collection of documents with metadata filters."""
 
@@ -159,6 +181,7 @@ class Catalog:
         self,
         views: Sequence[DocumentView],
         course_aliases: Mapping[str, str] | None = None,
+        texts: Mapping[str, str] | None = None,
     ) -> None:
         """Build the BM25 index and the filter index (done once, at start-up).
 
@@ -167,6 +190,8 @@ class Catalog:
             course_aliases: Course nicknames as ``{normalised alias: course code}``
                 (see ``load_alias_map``). Used to turn "oop" in a query into a
                 course filter. Course codes themselves always work.
+            texts: Text read from inside files as ``{drive file id: text}`` (see
+                ``load_searchable_texts``). Enables :meth:`search_content`.
         """
         self._views = list(views)
         documents = [
@@ -180,6 +205,67 @@ class Catalog:
         for doc_id, view in enumerate(self._views):
             self._add_to_index(doc_id, view)
         self._aliases = self._usable_aliases(course_aliases or {})
+        self._content_index = InvertedIndex()
+        readable: set[int] = set()
+        for doc_id, view in enumerate(self._views):
+            text = (texts or {}).get(view.drive_file_id)
+            if text:
+                self._content_index.add_document(doc_id, tokenize(text))
+                readable.add(doc_id)
+        self._readable = frozenset(readable)
+        self._content_scorer = Bm25Scorer(self._content_index)
+
+    @property
+    def has_content(self) -> bool:
+        """Whether any file's inner text is available for searching."""
+        return bool(self._readable)
+
+    def search_content(
+        self,
+        query: str,
+        filters: SearchFilters | None = None,
+        max_hits: int = DEFAULT_MAX_HITS,
+    ) -> ContentResult:
+        """Search the text inside files, within the files the filters allow.
+
+        Files whose text could not be read (scans, handwriting) cannot be matched, so they are
+        returned separately instead of being silently dropped: a student can still open them.
+
+        Args:
+            query: Topic words.
+            filters: Facet filters (course, exam, year, type).
+            max_hits: Maximum number of matched files.
+
+        Returns:
+            Matched files, files that could not be checked, and how many files were checkable.
+        """
+        allowed = self._allowed(filters or SearchFilters())
+        checkable = allowed & self._readable
+        tokens = tokenize(query)
+        ranked = self._content_scorer.search(tokens, limit=max_hits, allowed_ids=checkable)
+        words = tuple(dict.fromkeys(tokenize(query, stem=False)))
+        matched = [
+            Hit(
+                doc=self._views[r.doc_id],
+                score=r.score,
+                matched_terms=self._content_terms(r.doc_id, words),
+                source="content",
+            )
+            for r in ranked
+        ]
+        unreadable = [
+            Hit(doc=self._views[doc_id], score=0.0, source="unreadable")
+            for doc_id in sorted(allowed - self._readable, key=self._browse_order)
+        ]
+        return ContentResult(matched=matched, unreadable=unreadable, readable_total=len(checkable))
+
+    def _content_terms(self, doc_id: int, words: tuple[str, ...]) -> tuple[str, ...]:
+        """Return the query words that occur in a file's inner text."""
+        found: list[str] = []
+        for word in words:
+            if any(doc_id in self._content_index.postings(stem) for stem in tokenize(word)):
+                found.append(word)
+        return tuple(found)
 
     def _add_to_index(self, doc_id: int, view: DocumentView) -> None:
         """Register one document under each facet value it has."""

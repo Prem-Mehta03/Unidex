@@ -34,8 +34,14 @@ from unidex.auth.google import GoogleOAuth
 from unidex.chat.llm_resolver import LlmCourseResolver
 from unidex.chat.service import ChatService, CourseResolver
 from unidex.config import Settings, load_settings
+from unidex.content.quality import MIN_QUALITY
 from unidex.db.connection import connect
-from unidex.db.repositories import LlmUsageRepository, iter_document_views, load_alias_map
+from unidex.db.repositories import (
+    LlmUsageRepository,
+    iter_document_views,
+    load_alias_map,
+    load_searchable_texts,
+)
 from unidex.exceptions import LLMRateLimitError
 from unidex.extraction.budget import LlmBudget
 from unidex.extraction.llm_client import GeminiClient
@@ -80,10 +86,11 @@ def load_catalog(settings: Settings) -> Catalog:
     try:
         views = list(iter_document_views(conn))
         aliases = load_alias_map(conn)
+        texts = load_searchable_texts(conn, MIN_QUALITY)
     finally:
         conn.close()
-    catalog = Catalog(views, course_aliases=aliases)
-    logger.info("Catalog ready: %d documents", len(catalog))
+    catalog = Catalog(views, course_aliases=aliases, texts=texts)
+    logger.info("Catalog ready: %d documents, %d with readable text", len(catalog), len(texts))
     return catalog
 
 

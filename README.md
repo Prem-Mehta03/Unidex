@@ -90,6 +90,37 @@ changes or copies your files).
 If your college blocks third-party apps from reading its Drive, step 2 fails; keep using the
 Apps Script CSV export and `scripts/load_csv.py` instead.
 
+## Are my PDFs text or scans? (Stage 6c, first step)
+
+Searching papers by topic needs their text. Text PDFs can be read directly; scans need OCR.
+Measure which you have (downloads a small random sample, read-only, saves nothing but a CSV):
+
+```powershell
+pip install -e ".[dev,content]"
+python scripts/probe_pdfs.py                 # 12 PDFs of each type
+```
+
+## Read file contents so papers can be searched by topic (Stage 6d)
+
+Past papers carry no topic in their names, so Unidex reads the text inside the PDFs and stores
+it in the database (`document_text`). Chat then matches "recursion" or "inheritance" against
+that text. Papers it cannot read (handwriting, poor scans) are still listed, labelled as
+not checked.
+
+```powershell
+pip install -e ".[dev,content,ocr]"
+python scripts/drive_login.py                      # if your Drive sign-in is older than 7 days
+python scripts/read_contents.py --limit 10         # small trial run
+python scripts/read_contents.py                    # everything (papers, solutions, tutorials)
+```
+
+* Text-layer PDFs are read directly. Scanned pages go through OCR: RapidOCR (pip only, the
+  default via `--ocr auto`) or Tesseract if it is installed. `--ocr none` skips scans.
+* A file is kept only if at least half its pages have text and the text looks like real words
+  (quality 0.65 or more); handwriting usually fails this and is stored as unreadable.
+* Safe to stop with Ctrl+C and run again: finished files are skipped, changed files re-read.
+* Restart the website afterwards so the catalog picks up the new text.
+
 ## Extract metadata (Stage 3)
 
 ```powershell
