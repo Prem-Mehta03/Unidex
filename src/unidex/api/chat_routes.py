@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request
 
+from unidex.api.auth_routes import CurrentUser
 from unidex.api.chat_schemas import (
     ChatOptionsOut,
     ChatReplyOut,
@@ -13,6 +14,7 @@ from unidex.api.chat_schemas import (
     ResultsRequest,
 )
 from unidex.api.presenter import to_stack
+from unidex.api.usage import UsageLog
 from unidex.chat.models import MATERIAL_LABELS
 from unidex.chat.service import ChatService
 from unidex.search.labels import EXAM_TYPE_LABELS
@@ -58,9 +60,25 @@ def message(request: Request, body: MessageRequest) -> ChatReplyOut:
 
 
 @router.post("/results", response_model=ChatResultsOut)
-def results(request: Request, body: ResultsRequest) -> ChatResultsOut:
+def results(request: Request, body: ResultsRequest, user: CurrentUser) -> ChatResultsOut:
     """Search the drives for a confirmed form."""
-    plan = _service(request).planner.run(body.interpretation.to_domain())
+    form = body.interpretation.to_domain()
+    plan = _service(request).planner.run(form)
+    if body.final:
+        usage: UsageLog = request.app.state.usage
+        usage.search(
+            user.label,
+            "; ".join(form.topics),
+            {
+                "courses": list(form.courses),
+                "exam_types": list(form.exam_types),
+                "materials": [m.value for m in form.materials],
+                "years": list(form.years),
+                "recent_years": form.recent_years,
+            },
+            plan.total_files,
+            source="chat",
+        )
     return ChatResultsOut(
         total_files=plan.total_files,
         total_stacks=len(plan.stacks),

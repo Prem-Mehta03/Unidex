@@ -102,9 +102,12 @@ class ResultsRequest(BaseModel):
 
     Attributes:
         interpretation: The (possibly edited) form.
+        final: True when the student pressed "Search drives"; false for the live estimate
+            shown while editing. Only final searches are written to the search log.
     """
 
     interpretation: InterpretationModel
+    final: bool = False
 
 
 class CourseOptionOut(BaseModel):

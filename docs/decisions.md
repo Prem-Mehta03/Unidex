@@ -201,3 +201,35 @@ under the cap and complete.
 - **Known gaps:** course wording not in the alias list ("discrete maths"), "latest" on its own,
   unknown-course words end up as a topic, topic search inside paper contents (needs reading
   files), a topic list split on "and" ("stochastic calculus and finance" becomes two topics).
+
+
+## Chat fixes (Stage 5.1)
+
+- **"Latest" means newest year with papers.** "latest", "newest", "most recent" and "recent"
+  (without a number) become "last 1 year", which is counted over the years that actually have
+  papers for that course and exam, so a missing current year never empties the answer.
+- **Unknown subjects say so.** When no course is found but the message has topic words, the chat
+  says the course may not be in the drives yet and lists the courses it does have.
+- **Empty results** say the material may not have been added yet.
+
+## Login, reports and logs (Stage 6a)
+
+- **Domain check has two parts.** The email must end in `@<allowed domain>` and Google must send
+  the `hd` (hosted domain) claim naming the same domain. Without the second check anybody could
+  make a personal Google account that uses a college address.
+- **ID token is trusted without a signature check** because it comes straight from Google's token
+  address over HTTPS (allowed by the OpenID Connect rules). Issuer, audience, expiry, nonce and
+  `email_verified` are still checked. PKCE and a random `state` protect the redirect.
+- **Cookie sessions** (signed, HttpOnly, SameSite=Lax, Secure when the public address is https,
+  7 days). No server-side session table.
+- **Open locally, closed when configured.** Without Google settings the site is open. Setting
+  `UNIDEX_REQUIRE_LOGIN=true` makes the server refuse to start unless login is fully set up.
+- **Privacy.** Logs and reports hold a keyed hash of the email (HMAC, 16 hex characters), never
+  the address. Search text is stored, so trim it with `list_reports.py --delete-logs-older-than`.
+  The Search tab logs queries of 3+ characters and skips an identical repeat within 10 seconds;
+  typing pauses can still log a few partial queries, so Stage 7 should merge prefix chains.
+  Chat logs only when "Search drives" is pressed, not for the live estimate.
+- **Reports.** Same file and same type within 24 hours is stored once. Ten reports per person
+  per hour. Reports never change the index by themselves; a person reads them.
+- **Hosting caveat.** Free hosts such as Render wipe local files on every deploy, which would
+  delete reports and logs stored in SQLite. Decide before deploying (see Stage 6 deploy notes).

@@ -210,3 +210,13 @@ def test_material_slang(parser: RuleParser, message: str, material: Material) ->
     result = parse(parser, message)
     assert result.materials == (material,)
     assert result.topics == ()
+
+
+@pytest.mark.parametrize(
+    "message", ["dd compre papers latest", "newest dd compre", "dd most recent compre"]
+)
+def test_latest_alone_means_one_recent_year(parser: RuleParser, message: str) -> None:
+    result = parser.parse(message)
+    assert result.interpretation.recent_years == 1
+    assert result.interpretation.topics == ()
+    assert any("latest" in note for note in result.notes)

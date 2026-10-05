@@ -4,7 +4,9 @@ These pydantic models double as documentation: FastAPI turns them into the
 interactive page at ``/docs`` and refuses to send anything that does not match.
 """
 
-from pydantic import BaseModel
+from enum import StrEnum
+
+from pydantic import BaseModel, Field
 
 
 class FileCard(BaseModel):
@@ -150,3 +152,56 @@ class HealthResponse(BaseModel):
 
     status: str
     documents: int
+
+
+class MeResponse(BaseModel):
+    """Who is signed in.
+
+    Attributes:
+        login_required: Whether this server asks people to sign in.
+        signed_in: Whether the caller is signed in (always false when login is off).
+        name: Display name, or empty.
+        email: Email address of the caller, or empty.
+        error: Why the last sign-in failed (``domain``, ``failed``, ``cancelled``), or empty.
+            Reported once, then cleared.
+        allowed_domains: Email domains that may sign in.
+    """
+
+    login_required: bool
+    signed_in: bool
+    name: str
+    email: str
+    error: str
+    allowed_domains: list[str]
+
+
+class ReportType(StrEnum):
+    """What a student can report about a file."""
+
+    WRONG_INFO = "wrong_info"
+    BROKEN_LINK = "broken_link"
+
+
+class ReportRequest(BaseModel):
+    """A report sent from a file card.
+
+    Attributes:
+        file_id: Drive file id of the file (the ``id`` of its card).
+        type: What is wrong.
+        note: Optional explanation, up to 500 characters.
+    """
+
+    file_id: str = Field(min_length=1, max_length=200)
+    type: ReportType
+    note: str | None = Field(default=None, max_length=500)
+
+
+class ReportResponse(BaseModel):
+    """Answer to a report.
+
+    Attributes:
+        status: ``recorded`` for a new report, ``already_reported`` when the same problem
+            was reported on the same file in the last 24 hours.
+    """
+
+    status: str

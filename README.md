@@ -4,8 +4,8 @@ A web app that unifies scattered campus department drives (PYQs, notes, slides) 
 searchable index, with a chat interface and result cards that link back to the original files.
 Search structures (inverted index, BM25, trie) are written from scratch.
 
-**Status:** Stage 5 of 7 (search page and chat with a confirm step). Login and Drive sync come
-in later stages.
+**Status:** Stage 6a of 7 (search page, chat, college-account login, reports). Drive sync and
+deployment are next.
 
 ## Setup (Windows, PowerShell)
 
@@ -54,6 +54,20 @@ python scripts/eval_chat.py            # scores eval/chat_messages.csv
 Optional: if `GEMINI_API_KEY` and `GEMINI_MODEL` are set in `.env`, a message whose course the
 rules cannot find is sent to Gemini once, which may only pick from the indexed courses.
 
+## Login, reports and logs (Stage 6a)
+
+Locally the site is open (no login). To turn on Google sign-in, create an OAuth client in Google
+Cloud Console (type *Web application*, redirect address `http://127.0.0.1:8000/auth/callback`
+plus your hosted address later), then put the three values in `.env` (see `.env.example`).
+Never paste them into chat or commit them. Only accounts on `ALLOWED_EMAIL_DOMAIN` can sign in.
+
+Every file card has **Wrong info?** and **Broken link?** buttons. Read the reports with:
+
+```powershell
+python scripts/list_reports.py
+python scripts/list_reports.py --delete-logs-older-than 90
+```
+
 ## Extract metadata (Stage 3)
 
 ```powershell
@@ -89,6 +103,7 @@ mypy                # type checking
 | `src/unidex/ingestion/` | read a drive listing, store raw files |
 | `src/unidex/search/` | tokenizer, inverted index, BM25, trie, strategies, filtered catalog, stack grouping |
 | `src/unidex/api/` | FastAPI app, JSON schemas |
+| `src/unidex/auth/` | Google sign-in and the college-domain rule |
 | `src/unidex/chat/` | message parser, planner, optional Gemini course helper, parser evaluation |
 | `web/` | the search page (plain HTML, CSS and JavaScript, no build step) |
 | `src/unidex/extraction/` | folder-path parser, rules, Gemini client, daily budget, review queue, labelling |

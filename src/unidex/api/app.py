@@ -18,13 +18,19 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, Query, Request, Response
+from fastapi import Depends, FastAPI, Query, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import Field
+from starlette.middleware.sessions import SessionMiddleware
 
+from unidex.api.auth_routes import CurrentUser, require_user
+from unidex.api.auth_routes import router as auth_router
 from unidex.api.chat_routes import router as chat_router
 from unidex.api.presenter import to_facet_options, to_stack
+from unidex.api.report_routes import router as report_router
 from unidex.api.schemas import DetectedCourse, HealthResponse, SearchResponse, SuggestResponse
+from unidex.api.usage import RateLimiter, UsageLog
+from unidex.auth.google import GoogleOAuth
 from unidex.chat.llm_resolver import LlmCourseResolver
 from unidex.chat.service import ChatService, CourseResolver
 from unidex.config import Settings, load_settings
@@ -44,6 +50,9 @@ MAX_QUERY_LENGTH = 200
 MAX_STACK_PAGE = 50
 DEFAULT_STACK_PAGE = 10
 SUGGESTION_PREFIX_LENGTH = 40
+SESSION_COOKIE = "unidex_session"
+SESSION_DAYS = 7
+REPORTS_PER_HOUR = 10
 
 # Fonts come from Google Fonts; everything else must be our own files.
 CONTENT_SECURITY_POLICY = (
@@ -124,6 +133,7 @@ def create_app(
     settings: Settings | None = None,
     web_dir: Path | None = DEFAULT_WEB_DIR,
     course_resolver: CourseResolver | None = None,
+    oauth: GoogleOAuth | None = None,
 ) -> FastAPI:
     """Build the application.
 
@@ -135,10 +145,21 @@ def create_app(
         course_resolver: Optional language-model helper for the chat (tests pass a fake;
             when ``None`` and the catalog is loaded from the database, one is created
             if a Gemini key and model are configured).
+        oauth: Google sign-in helper (tests pass a fake). When ``None`` one is created if
+            the settings contain the Google client id and secret and a session secret.
+            With no helper the site is open to everyone (normal for local development).
 
     Returns:
         The configured FastAPI application.
     """
+    active = settings if settings is not None else (load_settings() if catalog is None else None)
+    active_settings = active or Settings.from_mapping({})
+    if oauth is None and active_settings.login_configured:
+        oauth = GoogleOAuth(
+            active_settings.google_client_id or "", active_settings.google_client_secret or ""
+        )
+    if oauth is None:
+        logger.warning("Google login is not configured: the site is open to everyone")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -146,14 +167,26 @@ def create_app(
         if catalog is not None:
             app.state.catalog = catalog
         else:
-            active_settings = settings or load_settings()
             app.state.catalog = load_catalog(active_settings)
             if resolver is None:
                 resolver = build_course_resolver(active_settings, app.state.catalog)
         app.state.chat = ChatService(app.state.catalog, resolver)
         yield
 
-    app = FastAPI(title="Unidex", version="0.5.0", lifespan=lifespan)
+    app = FastAPI(title="Unidex", version="0.6.0", lifespan=lifespan)
+    app.state.settings = active_settings
+    app.state.oauth = oauth
+    app.state.usage = UsageLog(active.db_path if active is not None else None)
+    app.state.report_limiter = RateLimiter(REPORTS_PER_HOUR, 3600)
+    if oauth is not None:
+        app.add_middleware(
+            SessionMiddleware,
+            secret_key=active_settings.session_secret or "",
+            session_cookie=SESSION_COOKIE,
+            max_age=SESSION_DAYS * 24 * 3600,
+            same_site="lax",
+            https_only=(active_settings.public_url or "").startswith("https://"),
+        )
 
     @app.middleware("http")
     async def security_headers(
@@ -178,6 +211,7 @@ def create_app(
     @app.get("/api/search", response_model=SearchResponse)
     def search(
         request: Request,
+        user: CurrentUser,
         q: Annotated[str, Query(max_length=MAX_QUERY_LENGTH)] = "",
         course: Annotated[list[str] | None, Query(max_length=20)] = None,
         doc_type: Annotated[list[DocType] | None, Query(max_length=20)] = None,
@@ -202,6 +236,18 @@ def create_app(
         )
         catalog_now = current_catalog(request)
         result = catalog_now.search(q, filters, detect_courses=detect)
+        request.app.state.usage.search(
+            user.label,
+            q,
+            {
+                "courses": sorted(filters.courses),
+                "doc_types": sorted(filters.doc_types),
+                "exam_types": sorted(filters.exam_types),
+                "years": sorted(filters.years),
+            },
+            result.total,
+            source="search",
+        )
         stacks = group_into_stacks(result.hits)
         page = stacks[stack_offset : stack_offset + stack_limit]
         return SearchResponse(
@@ -219,7 +265,7 @@ def create_app(
             ],
         )
 
-    @app.get("/api/suggest", response_model=SuggestResponse)
+    @app.get("/api/suggest", response_model=SuggestResponse, dependencies=[Depends(require_user)])
     def suggest(
         request: Request,
         prefix: Annotated[str, Query(max_length=SUGGESTION_PREFIX_LENGTH)] = "",
@@ -227,7 +273,7 @@ def create_app(
         """Complete the word the student is typing."""
         return SuggestResponse(suggestions=current_catalog(request).suggest(prefix))
 
-    @app.get("/api/facets")
+    @app.get("/api/facets", dependencies=[Depends(require_user)])
     def facets(request: Request) -> dict[str, list[dict[str, str | int]]]:
         """List every filter option with counts over the whole catalog."""
         catalog_now = current_catalog(request)
@@ -236,7 +282,9 @@ def create_app(
             for facet in FACETS
         }
 
-    app.include_router(chat_router)
+    app.include_router(auth_router)
+    app.include_router(chat_router, dependencies=[Depends(require_user)])
+    app.include_router(report_router)
 
     if web_dir is not None and web_dir.is_dir():
         app.mount("/", StaticFiles(directory=web_dir, html=True), name="web")

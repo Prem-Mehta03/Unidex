@@ -21,6 +21,9 @@ DEFAULT_LOG_LEVEL = "INFO"
 VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 DEFAULT_REQUESTS_PER_MINUTE = 5
 DEFAULT_REQUESTS_PER_DAY = 20
+DEFAULT_EMAIL_DOMAIN = "goa.bits-pilani.ac.in"
+MIN_SESSION_SECRET_LENGTH = 32
+TRUE_WORDS = frozenset({"1", "true", "yes", "on"})
 
 
 def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
@@ -61,6 +64,15 @@ class Settings:
         gemini_model: Model id copied from AI Studio, or ``None``.
         llm_requests_per_minute: Free-tier requests-per-minute limit.
         llm_requests_per_day: Free-tier requests-per-day limit.
+        google_client_id: OAuth client id from Google Cloud, or ``None``.
+        google_client_secret: OAuth client secret, or ``None`` (hidden from ``repr``).
+        session_secret: Random string that signs login cookies (hidden from ``repr``).
+        allowed_email_domains: Only emails at these domains may sign in.
+        allowed_emails: Individual addresses that may also sign in (for example the
+            developer's own account), exact match only.
+        require_login: When true the server refuses to start without login settings.
+        public_url: Address people use to reach the site, e.g. ``https://unidex.example``;
+            used to build the Google redirect address. ``None`` means "work it out per request".
     """
 
     db_path: Path
@@ -69,6 +81,18 @@ class Settings:
     gemini_model: str | None = None
     llm_requests_per_minute: int = DEFAULT_REQUESTS_PER_MINUTE
     llm_requests_per_day: int = DEFAULT_REQUESTS_PER_DAY
+    google_client_id: str | None = None
+    google_client_secret: str | None = field(default=None, repr=False)
+    session_secret: str | None = field(default=None, repr=False)
+    allowed_email_domains: tuple[str, ...] = (DEFAULT_EMAIL_DOMAIN,)
+    allowed_emails: tuple[str, ...] = ()
+    require_login: bool = False
+    public_url: str | None = None
+
+    @property
+    def login_configured(self) -> bool:
+        """Whether every setting needed for Google sign-in is present."""
+        return bool(self.google_client_id and self.google_client_secret and self.session_secret)
 
     @classmethod
     def from_mapping(cls, env: Mapping[str, str]) -> "Settings":
@@ -95,7 +119,24 @@ class Settings:
         if not db_path:
             raise ConfigError("UNIDEX_DB_PATH must not be empty")
 
-        return cls(
+        domains = tuple(
+            part.strip().lower().lstrip("@")
+            for part in env.get("ALLOWED_EMAIL_DOMAIN", DEFAULT_EMAIL_DOMAIN).split(",")
+            if part.strip()
+        )
+        if not domains:
+            raise ConfigError("ALLOWED_EMAIL_DOMAIN must name at least one domain")
+        secret = env.get("SESSION_SECRET", "").strip() or None
+        if secret is not None and len(secret) < MIN_SESSION_SECRET_LENGTH:
+            raise ConfigError(
+                f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters long"
+            )
+        require_login = env.get("UNIDEX_REQUIRE_LOGIN", "").strip().lower() in TRUE_WORDS
+        public_url = env.get("UNIDEX_PUBLIC_URL", "").strip().rstrip("/") or None
+        if public_url is not None and not public_url.startswith(("http://", "https://")):
+            raise ConfigError("UNIDEX_PUBLIC_URL must start with http:// or https://")
+
+        settings = cls(
             db_path=Path(db_path),
             log_level=log_level,
             gemini_api_key=env.get("GEMINI_API_KEY", "").strip() or None,
@@ -106,7 +147,24 @@ class Settings:
             llm_requests_per_day=_positive_int(
                 env, "LLM_REQUESTS_PER_DAY", DEFAULT_REQUESTS_PER_DAY
             ),
+            google_client_id=env.get("GOOGLE_CLIENT_ID", "").strip() or None,
+            google_client_secret=env.get("GOOGLE_CLIENT_SECRET", "").strip() or None,
+            session_secret=secret,
+            allowed_email_domains=domains,
+            allowed_emails=tuple(
+                part.strip().lower()
+                for part in env.get("ALLOWED_EMAILS", "").split(",")
+                if "@" in part
+            ),
+            require_login=require_login,
+            public_url=public_url,
         )
+        if settings.require_login and not settings.login_configured:
+            raise ConfigError(
+                "UNIDEX_REQUIRE_LOGIN is on, but GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET "
+                "and SESSION_SECRET are not all set"
+            )
+        return settings
 
 
 def load_settings(env_file: Path | None = None) -> Settings:

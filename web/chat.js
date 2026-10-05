@@ -106,8 +106,10 @@
     if (chat.greeted) return;
     chat.greeted = true;
     const { bubble } = addBotText(
-      'Hi! I find past papers, solutions, notes and slides in the department drives. ' +
-        'Tell me the course, the exam and what you need, and I will check with you before searching.'
+      'Hey, I am Unidex, your study-material assistant. 👋 ' +
+        'I can find past papers, solutions, notes and slides from the department drives. ' +
+        'Just tell me the course, the exam and what you need, in your own words, ' +
+        'and I will double-check with you before I search. What are you preparing for?'
     );
     bubble.append(promptChips(TRY_PROMPTS.slice(0, 3), send));
   }
@@ -395,7 +397,7 @@
     setBusy(true);
     const typing = addTyping();
     try {
-      const data = await postJson('/api/chat/results', { interpretation: form });
+      const data = await postJson('/api/chat/results', { interpretation: form, final: true });
       typing.remove();
       showResults(data);
     } catch (err) {
@@ -409,12 +411,12 @@
   function showResults(data) {
     const { bubble } = addBotText(
       data.total_files === 0
-        ? 'I found nothing for that.'
+        ? 'We do not have any files matching this in the drives yet.'
         : 'Found ' + plural(data.total_files, 'file') + ' in ' + plural(data.total_stacks, 'stack') + '.'
     );
     for (const note of data.notes) bubble.append(el('p', 'bubble-note', note));
     if (data.total_files === 0) {
-      bubble.append(el('p', 'bubble-note', 'You can change the form above, or tell me what to change.'));
+      bubble.append(el('p', 'bubble-note', 'This material may not have been added to the drives yet. You can adjust the form above, or tell me what to change.'));
       return;
     }
     const open = new Set(data.stacks.slice(0, 1).map((stack) => stack.key));

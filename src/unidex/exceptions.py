@@ -36,3 +36,7 @@ class LLMRateLimitError(LLMError):
 
 class LLMBudgetExceededError(LLMError):
     """Raised before a request is sent if it would exceed the configured daily budget."""
+
+
+class AuthError(UnidexError):
+    """Raised when a sign-in attempt fails or is not allowed."""

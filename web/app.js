@@ -443,8 +443,96 @@
       actions.append(el('span', 'btn btn-disabled', 'No link available'));
     }
     if (file.uncertain) actions.append(el('span', 'hint', 'Automatic tags; double-check the year and exam.'));
+    actions.append(reportControls(file, card));
     card.append(actions);
     return card;
+  }
+
+  /* ---------- "Wrong info?" and "Broken link?" ---------- */
+
+  const REPORT_ANSWERS = {
+    429: 'You have sent several reports in a short time. Please try again later.',
+    404: 'That file is no longer in the index.',
+    503: 'Reports are not available right now.',
+  };
+
+  async function sendReport(fileId, type, note) {
+    const response = await fetch(API + '/report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId, type: type, note: note || null }),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return { ok: true, text: data.status === 'already_reported'
+        ? 'Someone has already reported this recently. Thank you!'
+        : 'Thank you! We will check this file.' };
+    }
+    return { ok: false, text: REPORT_ANSWERS[response.status] || 'Could not send the report. Please try again.' };
+  }
+
+  function reportControls(file, card) {
+    const wrap = el('div', 'card-report');
+    let panel = null;
+
+    function close() {
+      if (panel) panel.remove();
+      panel = null;
+    }
+
+    function open(type) {
+      close();
+      panel = el('div', 'report-panel');
+      let noteInput = null;
+      if (type === 'wrong_info') {
+        const label = el('label', '', 'What looks wrong? (optional, for example “this is 2022, not 2023”)');
+        noteInput = document.createElement('input');
+        noteInput.type = 'text';
+        noteInput.maxLength = 500;
+        label.append(noteInput);
+        panel.append(label);
+      } else {
+        panel.append(el('span', 'report-msg', 'Report that this link does not open the file?'));
+      }
+      const row = el('div', 'report-row');
+      const send = el('button', 'btn btn-soft btn-tiny', 'Send report');
+      send.type = 'button';
+      const cancel = el('button', 'btn btn-ghost btn-tiny', 'Cancel');
+      cancel.type = 'button';
+      const message = el('span', 'report-msg');
+      message.setAttribute('role', 'status');
+      row.append(send, cancel, message);
+      panel.append(row);
+      cancel.addEventListener('click', close);
+      send.addEventListener('click', async () => {
+        send.disabled = true;
+        try {
+          const outcome = await sendReport(file.id, type, noteInput ? noteInput.value.trim() : '');
+          message.textContent = outcome.text;
+          message.classList.toggle('report-bad', !outcome.ok);
+          if (outcome.ok) {
+            send.hidden = true;
+            cancel.textContent = 'Close';
+          } else {
+            send.disabled = false;
+          }
+        } catch (err) {
+          message.textContent = 'Could not reach the server.';
+          message.classList.add('report-bad');
+          send.disabled = false;
+        }
+      });
+      card.append(panel);
+      (noteInput || send).focus();
+    }
+
+    for (const [type, label] of [['wrong_info', 'Wrong info?'], ['broken_link', 'Broken link?']]) {
+      const button = el('button', 'btn btn-ghost btn-tiny', label);
+      button.type = 'button';
+      button.addEventListener('click', () => open(type));
+      wrap.append(button);
+    }
+    return wrap;
   }
 
   function statusChip(className, iconName, text) {

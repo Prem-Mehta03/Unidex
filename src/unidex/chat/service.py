@@ -32,6 +32,10 @@ UNCLEAR_TEXT = (
     "Try something like “OOP midsem papers and notes” or “DD compre papers, last 3 years”."
 )
 CLARIFY_TEXT = "Which course is this for? I currently have these in the drives:"
+NO_DATA_TEXT = (
+    "I could not match that to a course in the drives, so we may not have that data yet. "
+    "Right now I can search these courses. Pick one if it is what you meant:"
+)
 CONFIRM_TEXT = "Here is what I understood. Does this look right before I search the drives?"
 
 
@@ -135,7 +139,7 @@ class ChatService:
         if not interpretation.courses:
             return ChatReply(
                 KIND_CLARIFY,
-                CLARIFY_TEXT,
+                NO_DATA_TEXT if interpretation.topics else CLARIFY_TEXT,
                 interpretation,
                 notes=parsed.notes,
                 course_options=self.course_options(),

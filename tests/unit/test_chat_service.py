@@ -172,3 +172,36 @@ def test_parse_courses_limits_picks() -> None:
 def test_blank_interpretation_flag() -> None:
     assert Interpretation().is_blank()
     assert not Interpretation(topics=("x",)).is_blank()
+
+
+def test_unknown_course_with_topics_says_the_data_may_be_missing(catalog: Catalog) -> None:
+    reply = ChatService(catalog).reply("midsem on Stochastic Calculus and Finance, need PYQ")
+    assert reply.kind == KIND_CLARIFY
+    assert "may not have that data" in reply.text
+    assert {o.code for o in reply.course_options} == {"CS F213", "CS F215"}
+
+
+def test_missing_course_without_topics_just_asks(catalog: Catalog) -> None:
+    reply = ChatService(catalog).reply("midsem papers")
+    assert reply.kind == KIND_CLARIFY
+    assert reply.text.startswith("Which course")
+
+
+def test_latest_means_the_newest_year_with_papers(catalog: Catalog) -> None:
+    service = ChatService(catalog)
+    latest = service.reply("OOP midsem papers latest").interpretation
+    everything = latest.with_changes(recent_years=None)
+    newest = service.planner.run(latest)
+    full = service.planner.run(everything)
+    assert len(newest.paper_years) == 1
+    assert newest.paper_years[0] == max(y for y in range(2000, 2100) if y in _years(full))
+    assert newest.total_files < full.total_files
+
+
+def _years(plan: object) -> set[int]:
+    return {
+        hit.doc.academic_year
+        for stack in plan.stacks  # type: ignore[attr-defined]
+        for hit in stack.hits
+        if hit.doc.academic_year
+    }

@@ -81,6 +81,7 @@ _RECENT = re.compile(
     re.IGNORECASE,
 )
 _LAST_YEAR = re.compile(r"\b(?:last|latest|most\s+recent)\s+year(?:'?s)?\b", re.IGNORECASE)
+_LATEST = re.compile(r"\b(?:latest|newest|most\s+recent|recent)\b", re.IGNORECASE)
 _SPAN = re.compile(r"\b(20\d{2})\s*[-\u2013/]\s*(\d{2}|\d{4})\b")
 _SHORT_SPAN = re.compile(r"\b(\d{2})\s*[-\u2013]\s*(\d{2})\b")
 _YEAR = re.compile(r"\b(20\d{2})\b")
@@ -113,7 +114,10 @@ _SMALLTALK: list[tuple[re.Pattern[str], str]] = [
         re.compile(
             r"^\s*(?:hi+|hello+|hey+|hola|yo|good\s+(?:morning|evening|afternoon))\W*$", re.I
         ),
-        "Hi! Tell me what you are preparing for, for example “OOP midsem papers and notes”.",
+        (
+            "Hey there! \U0001f44b Tell me what you are preparing for, like "
+            "“OOP midsem papers and notes”, and I will dig through the drives for you."
+        ),
     ),
     (
         re.compile(r"^\s*(?:thanks?|thank\s+you|thx|ty|cheers|great|awesome|nice)\W*$", re.I),
@@ -203,6 +207,10 @@ def _take_years(text: str, notes: list[str]) -> tuple[str, tuple[int, ...], int 
         recent = max(1, min(count, MAX_RECENT_YEARS))
     else:
         text = _blank_out(_LAST_YEAR, text, found)
+        if not found:
+            text = _blank_out(_LATEST, text, found)
+            if found:
+                notes.append("I read “latest” as the newest year that has papers for this course.")
         if found:
             recent = 1
 

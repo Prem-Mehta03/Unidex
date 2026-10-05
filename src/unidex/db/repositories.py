@@ -736,3 +736,149 @@ def load_alias_map(conn: sqlite3.Connection) -> dict[str, str]:
         """
     )
     return {row["alias_norm"]: row["code"] for row in rows}
+
+
+@dataclass(frozen=True, slots=True)
+class ReportRow:
+    """One student report about a file.
+
+    Attributes:
+        id: Report number.
+        drive_file_id: Drive id of the reported file.
+        name: File name.
+        url: Link to the file.
+        type: ``wrong_info`` or ``broken_link``.
+        note: What the student wrote (may be empty).
+        created_at: UTC time the report was first made.
+    """
+
+    id: int
+    drive_file_id: str
+    name: str
+    url: str
+    type: str
+    note: str
+    created_at: str
+
+
+class ReportRepository(BaseRepository):
+    """Student reports about files (``reports`` table)."""
+
+    def add(
+        self,
+        drive_file_id: str,
+        report_type: str,
+        note: str,
+        now: str,
+        *,
+        duplicate_since: str,
+    ) -> tuple[int, bool] | None:
+        """Record a report, unless the same problem was already reported recently.
+
+        Args:
+            drive_file_id: Drive id of the file the student reported.
+            report_type: ``wrong_info`` or ``broken_link``.
+            note: Optional explanation (may be empty).
+            now: UTC time as ISO text.
+            duplicate_since: A report of the same type on the same file made at or after
+                this time counts as a duplicate and is not stored again.
+
+        Returns:
+            ``(report id, is_new)``, or ``None`` if no indexed file has that Drive id.
+        """
+        row = self._conn.execute(
+            """
+            SELECT d.id FROM documents d JOIN raw_files r ON r.id = d.raw_file_id
+            WHERE r.drive_file_id = ?
+            """,
+            (drive_file_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        document_id = int(row["id"])
+        existing = self._conn.execute(
+            "SELECT id FROM reports WHERE document_id = ? AND type = ? AND created_at >= ?",
+            (document_id, report_type, duplicate_since),
+        ).fetchone()
+        if existing is not None:
+            return int(existing["id"]), False
+        cursor = self._conn.execute(
+            "INSERT INTO reports (document_id, type, note, created_at) VALUES (?, ?, ?, ?)",
+            (document_id, report_type, note or None, now),
+        )
+        return int(cursor.lastrowid or 0), True
+
+    def recent(self, limit: int = 50) -> list[ReportRow]:
+        """Return the newest reports first.
+
+        Args:
+            limit: Maximum number of reports to return.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT p.id, r.drive_file_id, r.name, r.url, p.type,
+                   COALESCE(p.note, '') AS note, p.created_at
+            FROM reports p
+            JOIN documents d ON d.id = p.document_id
+            JOIN raw_files r ON r.id = d.raw_file_id
+            ORDER BY p.created_at DESC, p.id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [
+            ReportRow(
+                id=int(r["id"]),
+                drive_file_id=r["drive_file_id"],
+                name=r["name"],
+                url=r["url"],
+                type=r["type"],
+                note=r["note"],
+                created_at=r["created_at"],
+            )
+            for r in rows
+        ]
+
+
+class SearchLogRepository(BaseRepository):
+    """What people searched for (``search_logs`` table). Holds no email addresses."""
+
+    def add(
+        self, user_hash: str, query: str, filters_json: str, result_count: int, now: str
+    ) -> int:
+        """Store one search.
+
+        Args:
+            user_hash: Non-reversible label for the person (see ``auth.policy.user_hash``).
+            query: The text searched for.
+            filters_json: Filters and source as JSON text.
+            result_count: How many files matched.
+            now: UTC time as ISO text.
+
+        Returns:
+            The new row id.
+        """
+        cursor = self._conn.execute(
+            """
+            INSERT INTO search_logs (user_hash, query, filters, result_count, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (user_hash, query, filters_json, result_count, now),
+        )
+        return int(cursor.lastrowid or 0)
+
+    def count(self) -> int:
+        """Return how many searches are stored."""
+        return int(self._conn.execute("SELECT COUNT(*) FROM search_logs").fetchone()[0])
+
+    def delete_before(self, cutoff: str) -> int:
+        """Delete searches older than a time.
+
+        Args:
+            cutoff: UTC time as ISO text; rows with ``created_at`` before it are removed.
+
+        Returns:
+            How many rows were deleted.
+        """
+        cursor = self._conn.execute("DELETE FROM search_logs WHERE created_at < ?", (cutoff,))
+        return cursor.rowcount

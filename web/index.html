@@ -26,11 +26,25 @@
     </nav>
     <div class="topbar-right">
       <span class="pill pill-ok" id="catalog-pill" hidden></span>
+      <span class="pill pill-muted user-chip" id="user-chip" hidden></span>
+      <button class="btn btn-ghost" id="signout" type="button" hidden>Sign out</button>
       <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch colour theme"></button>
     </div>
   </header>
 
   <div class="scrim" id="scrim" hidden></div>
+
+  <div class="login-screen" id="login-screen" role="dialog" aria-modal="true"
+       aria-labelledby="login-title" hidden>
+    <div class="login-card">
+      <span class="brand-mark" aria-hidden="true">U</span>
+      <h1 id="login-title">Sign in to Unidex</h1>
+      <p>Use your college Google account (<strong id="login-domain">college email</strong>) to search the department drives.</p>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <a class="btn btn-primary login-btn" id="login-btn" href="/auth/login">Continue with Google</a>
+      <p class="login-fine">Unidex stores no email addresses with your searches. Your sign-in only proves you are a student.</p>
+    </div>
+  </div>
 
   <div class="layout">
     <aside class="sidebar" id="sidebar" aria-label="Filters">
@@ -89,6 +103,7 @@
     <span>Tags come from file names and folders; look for the <em>Tags unsure</em> label.</span>
   </footer>
 
+  <script src="auth.js" defer></script>
   <script src="app.js" defer></script>
   <script src="chat.js" defer></script>
 </body>
