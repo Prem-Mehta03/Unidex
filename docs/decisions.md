@@ -319,3 +319,15 @@ under the cap and complete.
   starts it (public address, login on, catalog copy) and answered health, login redirect, 401
   for data and 404 for the API pages; the Apps Script was run against a mock of Google's
   classes, not on Google.
+
+## Public code, private catalog
+
+- **Two repositories.** The public repository (`main`) holds code, invented sample data,
+  screenshots and aggregate results. The catalog snapshot, which lists real file names, links
+  and paper text, lives only on the `deploy` branch of a private repository that Render builds
+  from. `deploy/catalog.db` is git-ignored on `main` so it cannot be committed there by accident.
+- **README screenshots use the invented sample drive**, with a few invented paper texts so the
+  "mentions it inside the file" explanation can be shown.
+- **Chat fix found while taking screenshots:** "too" and "plus" at the end of a message were
+  becoming topics; they are now treated as filler. The topic hint on the confirmation form now
+  says that file text is searched as well as names.

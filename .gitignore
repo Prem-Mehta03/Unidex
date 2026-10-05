@@ -10,8 +10,7 @@ data/drive_token.json
 *.db-journal
 *.db-wal
 *.db-shm
-# The one database that IS uploaded to the web host (private repo only).
-!deploy/catalog.db
+# deploy/catalog.db is added with `git add -f` on the private `deploy` branch only.
 data/real/*
 !data/real/.gitkeep
 

@@ -220,3 +220,9 @@ def test_latest_alone_means_one_recent_year(parser: RuleParser, message: str) ->
     assert result.interpretation.recent_years == 1
     assert result.interpretation.topics == ()
     assert any("latest" in note for note in result.notes)
+
+
+def test_trailing_too_and_plus_are_not_topics(parser: RuleParser) -> None:
+    result = parse(parser, "OOP midsem papers on inheritance, and the lecture notes too")
+    assert result.topics == ("inheritance",)
+    assert parse(parser, "OOP notes on inheritance plus slides").topics == ("inheritance",)

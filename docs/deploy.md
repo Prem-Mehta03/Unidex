@@ -4,8 +4,8 @@
 
 | What | Where | Survives a restart? |
 |---|---|---|
-| Code | Private GitHub repository | yes |
-| Catalog (files, labels, paper text) | `deploy/catalog.db` in the same repository | yes (it is part of the deploy) |
+| Code | Public repository (`main`) and the private one (`deploy`) | yes |
+| Catalog (files, labels, paper text) | `deploy/catalog.db` on the `deploy` branch of the private repository | yes (it is part of the deploy) |
 | Reports and search logs | A Google Sheet you own (copy sent by the site) | **yes** |
 | The same reports and logs in the server's own SQLite file | Render's temporary disk | **no** (wiped on every restart, sleep and deploy) |
 | Secrets (Google client secret, session secret) | Render's environment settings | yes |
@@ -23,10 +23,19 @@ python scripts/export_deploy_db.py
 
 This writes `deploy/catalog.db`: your catalog without any reports or search logs.
 
-## 2. Put the project on GitHub (private!)
+## 2. Two GitHub repositories: public code, private catalog
 
-The repository will contain your drives' file names, links and paper text, so it must be
-**private**. On github.com create a new empty private repository, then in the project folder:
+The code, invented sample data and screenshots are fine to show the world, but
+`deploy/catalog.db` contains your drives' file names, links and paper text and must **never**
+be public. So there are two repositories and one extra branch:
+
+* **`unidex` (public)**: branch `main`, code only. `deploy/catalog.db` is git-ignored here, so
+  `git add .` cannot put it on `main` by accident.
+* **`unidex-deploy` (private)**: only the branch `deploy`, which is `main` plus the catalog
+  file. Render builds from this one.
+
+On github.com create both empty repositories (the second one **private**). Then in the project
+folder:
 
 ```powershell
 git init
@@ -35,14 +44,29 @@ git status
 ```
 
 Read the list from `git status`. It must **not** contain `.env`, anything with `token` in its
-name, or `data/real/`. It **should** contain `deploy/catalog.db`. If it looks right:
+name, `data/real/` or any `.db` file. If it looks right:
 
 ```powershell
 git commit -m "Unidex"
 git branch -M main
 git remote add origin https://github.com/YOUR-NAME/unidex.git
 git push -u origin main
+
+git remote add private https://github.com/YOUR-NAME/unidex-deploy.git
+git checkout -b deploy
+git config branch.deploy.remote private
+git config branch.deploy.pushRemote private
+python scripts/export_deploy_db.py
+git add -f deploy/catalog.db
+git commit -m "Catalog snapshot"
+git push -u private deploy
+git checkout main
 ```
+
+Switching back to `main` removes `deploy/catalog.db` from your folder (it only exists on the `deploy` branch); that is expected, and `export_deploy_db.py` recreates it.
+
+The two `git config` lines make `git push` from the `deploy` branch go to the private
+repository only. Never push `deploy` to `origin`.
 
 ## 3. Create the Sheet that keeps reports and logs
 
@@ -59,8 +83,8 @@ the script answers "forbidden" and writes nothing.
 
 ## 4. Create the Render service
 
-1. render.com > sign up with GitHub > New > **Blueprint** > pick your private repository.
-   Render reads `render.yaml`.
+1. render.com > sign up with GitHub > New > **Blueprint** > pick the private repository
+   `unidex-deploy` and the branch **`deploy`**. Render reads `render.yaml`.
 2. Fill in the values it asks for:
    * `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`: the same *Web application* client you use
      on your computer.
@@ -103,13 +127,18 @@ python scripts/drive_login.py        # if your Drive sign-in is older than 7 day
 python scripts/sync_drive.py ...     # as before
 python scripts/extract_metadata.py
 python scripts/read_contents.py
+
+git checkout deploy
+git merge main                       # bring the latest code across
 python scripts/export_deploy_db.py
-git add deploy/catalog.db
+git add -f deploy/catalog.db
 git commit -m "Update catalog"
 git push
+git checkout main
 ```
 
-Render redeploys by itself after the push.
+Render redeploys by itself after the push. Code changes go to `main` and `origin` as usual; they
+reach the website the next time you merge `main` into `deploy` and push.
 
 ## Things to know
 

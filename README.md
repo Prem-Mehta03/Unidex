@@ -1,13 +1,149 @@
 # Unidex
 
-A web app that unifies scattered campus department drives (PYQs, notes, slides) into one
-searchable index, with a chat interface and result cards that link back to the original files.
-Search structures (inverted index, BM25, trie) are written from scratch.
+**One search box for scattered college Google Drives.** Ask in plain words, for example
+*"OOP midsem papers on inheritance, and the lecture notes too"*, confirm what Unidex understood,
+and get grouped result cards that open the original Drive files. Nothing is copied or hosted:
+Unidex only indexes and links.
 
-**Status:** Stage 6b of 7 (search page, chat, login, reports, live Drive sync). File-content
-reading and deployment are next.
+Built for BITS Pilani K. K. Birla Goa Campus, where past papers, solutions, notes and slides
+live in many differently named folders. The search structures (inverted index, BM25 ranking,
+trie, filter indexes) are written from scratch; the website, database and login are a small,
+fully tested FastAPI + SQLite application with a plain HTML/JS front end.
 
-## Setup (Windows, PowerShell)
+![Unidex chat showing results for an OOP question](docs/img/02-chat-results.png)
+
+> All screenshots use an **invented sample drive** (`data/sample/sample_drive.csv`). The real
+> drives are not part of this repository, and the live site only signs in college accounts.
+
+## What it does
+
+- **Chat that checks itself.** A rule-based parser reads the message (course, exam, years,
+  topics, kinds of material) and shows an editable form *before* searching. No language model is
+  needed; an optional Gemini helper is only asked to pick a course when the rules find none.
+- **Search by topic inside papers.** File names rarely say what a paper covers, so Unidex reads
+  the PDFs (text layer first, OCR for scans) and searches the text. Papers it could not read
+  (handwriting, poor scans) are listed last and labelled as not checked, never silently dropped.
+- **Stacks, not a flat list.** Results are grouped (course, material, exam) so ten midsem papers
+  appear as one card group, each file with a plain-language reason it matched.
+- **A normal search page too:** autocomplete, live filters with counts, and the same stacks.
+- **Always the original file.** "Open in Drive" links to the source; "Wrong info?" and
+  "Broken link?" reports go to the maintainer.
+- **Login limited to the college.** Google sign-in (OIDC with PKCE) accepts a college address
+  only when Google also vouches for the college domain.
+
+| Confirm what was understood | Plain search with live filters |
+|---|---|
+| ![Confirmation form](docs/img/01-chat-confirm.png) | ![Search page](docs/img/03-search.png) |
+
+| College-only sign-in | Works on a phone |
+|---|---|
+| ![Login screen](docs/img/04-login.png) | <img src="docs/img/05-mobile.png" width="260" alt="Mobile chat"> |
+
+## How it works
+
+```mermaid
+flowchart LR
+    Drive[("Google Drive<br/>folders")] -->|"read-only listing"| Sync["Sync job<br/>(idempotent upserts)"]
+    Sync --> Raw[raw_files]
+    Raw --> Extract["Metadata extractor<br/>rules first, optional Gemini"]
+    Extract --> Docs[documents]
+    Drive -->|"PDF download"| Reader["Content reader<br/>text layer, then OCR"]
+    Reader --> Text[document_text]
+    subgraph SQLite
+        Raw
+        Docs
+        Text
+    end
+    Docs --> Catalog
+    Text --> Catalog
+    subgraph Memory["Built once at start-up"]
+        Catalog["Catalog<br/>inverted index + BM25<br/>trie + filter indexes"]
+    end
+    Catalog --> API["FastAPI<br/>login, search, chat, reports"]
+    API --> UI["HTML/JS front end"]
+    API -.->|"copies of reports and logs"| Sheet[("Google Sheet")]
+```
+
+Chat is stateless on the server: the browser sends back the previous interpretation, so a
+restart never loses a conversation.
+
+```mermaid
+flowchart LR
+    M["Student message"] --> P["RuleParser<br/>course, exam, years, topics, materials"]
+    P -->|"course not found"| G["Optional Gemini<br/>picks from known courses only"]
+    P --> F["Editable form<br/>live estimate of file count"]
+    G --> F
+    F -->|"Search drives"| PL["Planner"]
+    PL -->|"papers: metadata filters<br/>+ text inside papers"| C[Catalog]
+    PL -->|"notes, slides: name BM25<br/>+ text inside files"| C
+    C --> S["Stacks with reasons"]
+```
+
+The data model keeps the Drive listing separate from what Unidex derives from it, so a re-sync
+never overwrites a human correction:
+
+```mermaid
+erDiagram
+    raw_files ||--o| documents : "labelled as"
+    documents ||--o| document_text : "has"
+    documents }o--|| courses : "belongs to"
+    courses ||--o{ course_aliases : "nicknames"
+    documents ||--o{ reports : "reported"
+    documents ||--o{ review_queue : "needs review"
+    raw_files {
+        text drive_file_id PK
+        text name
+        text path
+    }
+    documents {
+        text doc_type
+        text exam_type
+        int academic_year
+        real confidence
+        text method
+    }
+    document_text {
+        text method
+        real quality
+        int pages
+    }
+```
+
+## Fundamentals
+
+| Area | What is in the code |
+|---|---|
+| **Data structures and algorithms** | Inverted index with postings ([`inverted_index.py`](src/unidex/search/inverted_index.py)), BM25 scoring ([`bm25.py`](src/unidex/search/bm25.py)), trie for autocomplete ([`trie.py`](src/unidex/search/trie.py)), tokenizer with light plural stemming and word/number splitting, set-based facet filters (OR inside a facet, AND across facets), top-k selection with a heap |
+| **Databases** | Normalised SQLite schema with constraints and indexes ([`schema.sql`](src/unidex/db/schema.sql)), repository classes, idempotent upserts keyed by Drive id, transactional sync that hides vanished files instead of deleting them, resumable batch jobs, snapshot export |
+| **AI** | Rules-first metadata extraction with confidence scores and a review queue, optional LLM fallback behind a rate-limit budget, OCR with a text-quality gate that rejects garbled handwriting, a rule-based natural-language parser |
+| **OOP and design patterns** | Strategy (`SearchStrategy`, OCR engines, `EventSink`), abstract bases (`FileSource` for CSV and Drive, `LLMClient`), dependency injection by constructor and callable, custom exception hierarchy, frozen dataclasses |
+| **Security** | OpenID Connect with PKCE, state and nonce; domain check that needs both the email domain and Google's hosted-domain claim; signed cookies; hashed user ids in logs; read-only Drive scope; secrets only in the environment |
+
+## Measured results
+
+From [`docs/results.md`](docs/results.md), produced by `python scripts/measure.py` on the real
+collection (1,134 files from 5 courses):
+
+| What | Result |
+|---|---|
+| Files labelled with confidence 0.8 or more | 97%; of all files, 1,057 were labelled by rules, 76 by hand review and 1 by the language model |
+| Name search, right file in the top 5 (28 hand-written queries) | BM25 26/28, MRR 0.90; a naive scan 25/28, MRR 0.86 |
+| Search time (ranking, filters, facet counts) | median 1.4 ms, 95th percentile 10.5 ms |
+| Papers, solutions and tutorials searchable by topic | 341 of 405 PDFs (84%): 234 from the text layer, 107 through OCR |
+| Content search self-test | the file a query was drawn from came first for 89% and in the top 5 for 100% |
+| Chat message reading (41 messages) | 38 fully correct |
+
+Read these honestly:
+
+- BM25 beats the naive scan only slightly on this small, tidy test set, and is about 2x faster on
+  a collection 100 times larger. It is not a dramatic win; the point was to build and measure it.
+- The content self-test uses rare words taken from the files themselves, so it is an upper
+  bound on the index, not proof that students phrase topics that way.
+- The chat messages were written by the developer and the rules were tuned after seeing
+  failures, so 38/41 is not a held-out score.
+- Handwritten solutions stay unsearchable by content (70% of solutions are searchable).
+
+## Try it yourself (with the sample drive)
 
 ```powershell
 python -m venv .venv
@@ -16,177 +152,46 @@ pip install -e ".[dev]"
 copy .env.example .env
 python scripts/init_db.py
 python scripts/load_csv.py --csv data/sample/sample_drive.csv
+python scripts/extract_metadata.py
+python scripts/serve.py          # open http://127.0.0.1:8000
 ```
 
-On macOS/Linux, activate with `source .venv/bin/activate` and copy with `cp`.
+On macOS or Linux use `source .venv/bin/activate` and `cp`. Locally the site is open (no login);
+login switches on when the Google settings are present. The test suite (`python -m pytest`,
+700+ tests), `ruff` and `mypy --strict` all run clean.
 
-Run everything from the repository root.
+More: [developer guide](docs/guide.md) (loading real drives, Drive sync, reading PDF contents,
+measuring), [deployment](docs/deploy.md), and [design decisions](docs/decisions.md) with the
+reasons and the known gaps.
 
-## Try the search (after loading a CSV)
+## Project layout
 
-```powershell
-python scripts/search_cli.py "laplace transform guide"
-python scripts/search_cli.py --suggest lap
-python scripts/benchmark.py
+```
+src/unidex/
+  search/       tokenizer, inverted index, BM25, trie, catalog, grouping, measurement helpers
+  db/           schema, connection, repositories, snapshot export
+  ingestion/    CSV and Drive sources, sync job, comparison, downloads
+  extraction/   path parser, rules, optional LLM extractor, review queue
+  content/      PDF text and OCR readers, quality gate, pipeline
+  chat/         parser, planner, optional course resolver, evaluation
+  auth/         Google sign-in, Drive sign-in, domain policy
+  api/          FastAPI app, routes, usage log, durable event sink
+web/            plain HTML, CSS and JavaScript front end
+scripts/        command-line tools (load, sync, extract, read, measure, serve, export)
+tests/          unit and integration tests, including fake Google and fake Drive servers
 ```
 
-## Run the web app (Stage 4)
+## Limits and honest notes
 
-After loading your CSVs and running `extract_metadata.py`:
+- Only PDFs are read for content; `.pptx` slides are searched by name.
+- Mathematical symbols extract poorly, and handwriting is not searchable.
+- The free-text Search tab does not use paper contents yet; chat does.
+- The Gemini helper has been tested with a fake client only.
+- A Drive sign-in in Google's Testing mode expires every 7 days, so syncing needs a fresh
+  `drive_login.py`; the website's own sign-in is not affected.
+- The college's file contents belong to the college and its teachers. This repository contains
+  only code, invented sample data and aggregate numbers.
 
-```powershell
-python scripts/serve.py          # then open http://127.0.0.1:8000
-```
+## License
 
-The server only listens on your own computer. The interactive API reference is at `/docs`.
-The catalog is built once at start-up, so restart the server after loading new data.
-
-## Chat (Stage 5)
-
-The **Chat** tab reads a message such as "OOP midsem papers and notes on inheritance", shows a
-form to confirm or edit (course, exam, years, topics, kinds of material), then searches.
-Reading messages uses rules only; no language-model request is needed. To measure it:
-
-```powershell
-python scripts/eval_chat.py            # scores eval/chat_messages.csv
-```
-
-Optional: if `GEMINI_API_KEY` and `GEMINI_MODEL` are set in `.env`, a message whose course the
-rules cannot find is sent to Gemini once, which may only pick from the indexed courses.
-
-## Login, reports and logs (Stage 6a)
-
-Locally the site is open (no login). To turn on Google sign-in, create an OAuth client in Google
-Cloud Console (type *Web application*, redirect address `http://127.0.0.1:8000/auth/callback`
-plus your hosted address later), then put the three values in `.env` (see `.env.example`).
-Never paste them into chat or commit them. Only accounts on `ALLOWED_EMAIL_DOMAIN` can sign in.
-
-Every file card has **Wrong info?** and **Broken link?** buttons. Read the reports with:
-
-```powershell
-python scripts/list_reports.py
-python scripts/list_reports.py --delete-logs-older-than 90
-```
-
-## Sync from Google Drive (Stage 6b)
-
-Instead of re-exporting a CSV, Unidex can list the Drive folders itself (read-only; it never
-changes or copies your files).
-
-1. Google Cloud Console (same project): enable **Google Drive API**; create an OAuth client of
-   type **Desktop app**; put its id and secret in `.env` as `DRIVE_CLIENT_ID` and
-   `DRIVE_CLIENT_SECRET`; add the Google account that can open the drives as a test user.
-2. `python scripts/drive_login.py` (once, opens your browser; repeat weekly while the OAuth app is
-   in Testing mode, because Google expires the sign-in after 7 days).
-3. Check before writing anything:
-   `python scripts/sync_drive.py --folder <folder id or link> --compare data/real/Data_1_Unidex.csv --dry-run`
-   The comparison should say nearly all files are in both with identical folder and name.
-   If you picked a course folder itself (say the M3 folder) add `--path-prefix /M3`, so paths read
-   like the CSV's (`/M3/Sem 1 .../file.pdf`); the folder name is how the course is recognised.
-4. Real run: `python scripts/sync_drive.py --folder <id> --department CS --label "CS archive"`,
-   then restart the website. Files deleted from Drive are hidden from search (never deleted
-   from the database); a listing that lost over half of a source is refused unless `--force`.
-
-If your college blocks third-party apps from reading its Drive, step 2 fails; keep using the
-Apps Script CSV export and `scripts/load_csv.py` instead.
-
-## Are my PDFs text or scans? (Stage 6c, first step)
-
-Searching papers by topic needs their text. Text PDFs can be read directly; scans need OCR.
-Measure which you have (downloads a small random sample, read-only, saves nothing but a CSV):
-
-```powershell
-pip install -e ".[dev,content]"
-python scripts/probe_pdfs.py                 # 12 PDFs of each type
-```
-
-## Read file contents so papers can be searched by topic (Stage 6d)
-
-Past papers carry no topic in their names, so Unidex reads the text inside the PDFs and stores
-it in the database (`document_text`). Chat then matches "recursion" or "inheritance" against
-that text. Papers it cannot read (handwriting, poor scans) are still listed, labelled as
-not checked.
-
-```powershell
-pip install -e ".[dev,content,ocr]"
-python scripts/drive_login.py                      # if your Drive sign-in is older than 7 days
-python scripts/read_contents.py --limit 10         # small trial run
-python scripts/read_contents.py                    # everything (papers, solutions, tutorials)
-```
-
-* Text-layer PDFs are read directly. Scanned pages go through OCR: RapidOCR (pip only, the
-  default via `--ocr auto`) or Tesseract if it is installed. `--ocr none` skips scans.
-* A file is kept only if at least half its pages have text and the text looks like real words
-  (quality 0.65 or more); handwriting usually fails this and is stored as unreadable.
-* Safe to stop with Ctrl+C and run again: finished files are skipped, changed files re-read.
-* Restart the website afterwards so the catalog picks up the new text.
-
-## Put it online (Stage 6 deployment)
-
-See [docs/deploy.md](docs/deploy.md): export a clean catalog copy
-(`python scripts/export_deploy_db.py`), push to a private GitHub repository, create the Render
-service from `render.yaml`, and keep reports and logs in a Google Sheet because the free host
-forgets local files.
-
-## Measure it (Stage 7)
-
-```powershell
-python scripts/measure.py
-```
-
-Writes `docs/results.md`: collection size and how it was labelled, how many PDFs are searchable
-by topic, name search (naive scan vs BM25: right file first, in the top 5, MRR), speed (median
-and 95th percentile, and growth on a collection 100 times larger), a self-retrieval test of the
-content search, the chat score, and a resume draft filled with those numbers. No language-model
-requests are used. `scripts/benchmark.py` still gives the per-query speed table.
-
-## Extract metadata (Stage 3)
-
-```powershell
-python scripts/extract_metadata.py                 # rules only: no LLM calls at all
-python scripts/extract_metadata.py --llm gemini    # also ask Gemini about the leftovers
-python scripts/review_queue.py export              # writes data/real/review.csv
-python scripts/review_queue.py import              # stores your corrections
-python scripts/label_sheet.py make                 # ~100 files to check by hand
-python scripts/label_sheet.py score                # accuracy after you fill the sheet in
-```
-
-The app works fully with `--llm none`. Gemini is only used for the few files the rules cannot
-classify, in one batched request, and never more than `LLM_REQUESTS_PER_DAY` per day.
-Only folder paths and file names are sent to Gemini, never file contents.
-
-If you already created a database in Stage 1 or 2, running any script upgrades it automatically
-(the empty `documents` table is rebuilt). Your `raw_files` are kept.
-
-## Checks
-
-```powershell
-pytest              # tests
-ruff check .        # lint (also forbids print())
-ruff format .       # formatting
-mypy                # type checking
-```
-
-## Layout
-
-| Folder | Job |
-|---|---|
-| `src/unidex/db/` | schema and all SQL (repositories) |
-| `src/unidex/ingestion/` | read a drive listing, store raw files |
-| `src/unidex/search/` | tokenizer, inverted index, BM25, trie, strategies, filtered catalog, stack grouping |
-| `src/unidex/api/` | FastAPI app, JSON schemas |
-| `src/unidex/auth/` | Google sign-in, the college-domain rule, read-only Drive access |
-| `src/unidex/chat/` | message parser, planner, optional Gemini course helper, parser evaluation |
-| `web/` | the search page (plain HTML, CSS and JavaScript, no build step) |
-| `src/unidex/extraction/` | folder-path parser, rules, Gemini client, daily budget, review queue, labelling |
-| `src/unidex/models/` | plain data classes and enums |
-| `scripts/` | command-line entry points |
-| `eval/` | test queries and benchmark results |
-| `data/sample/` | synthetic drive listing (safe to commit) |
-| `data/real/` | your real exports (git-ignored, never commit) |
-| `docs/decisions.md` | what we chose and why |
-
-## Conventions
-
-Google-style docstrings everywhere, type hints everywhere, `logging` instead of `print`,
-custom exceptions instead of bare `except`, no secrets in code (use `.env`).
+[MIT](LICENSE) for the code. The sample data is invented.

@@ -105,7 +105,7 @@ _FILLER_WORDS = """
     topic topics chapter chapters unit units part parts section sections
     last past previous year years upcoming next coming
     there here where which what who how when why if so but not no yes ok okay
-    hi hello hey thanks thank
+    hi hello hey thanks thank too plus
     """
 _FILLER = frozenset(re.findall(r"[a-z]+", _FILLER_WORDS))
 

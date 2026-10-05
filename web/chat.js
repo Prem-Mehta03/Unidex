@@ -345,7 +345,7 @@
       });
       row.append(field);
       box.append(row);
-      box.append(el('p', 'confirm-hint', 'Topics are matched against the names of notes and slides.'));
+      box.append(el('p', 'confirm-hint', 'Topics are matched against file names and, where the text could be read, the text inside the files.'));
       return box;
     }
 
