@@ -96,3 +96,12 @@ class TestRateLimiter:
         assert limiter.allow("b")
         now[0] = 61
         assert limiter.allow("a")
+
+
+def test_flat_values_for_the_durable_copy() -> None:
+    from unidex.api.usage import _flat
+
+    assert _flat(None) == ""
+    assert _flat(["a", "b"]) == "a, b"
+    assert _flat({"x"}) == "x"
+    assert _flat(2025) == "2025"

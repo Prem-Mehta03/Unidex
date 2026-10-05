@@ -25,6 +25,7 @@ from unidex.logging_setup import configure_logging
 from unidex.models.search import SearchDocument
 from unidex.search.corpus import build_corpus
 from unidex.search.evaluation import EvalQuery, first_relevant_rank, load_queries
+from unidex.search.measure import scale_corpus
 from unidex.search.strategies import Bm25Search, NaiveSearch, SearchStrategy
 
 logger = logging.getLogger("benchmark")
@@ -36,34 +37,6 @@ DEFAULT_REPEATS = 10
 DEFAULT_TOP_K = 5
 MRR_CUTOFF = 10
 MILLISECONDS = 1000.0
-
-
-def scale_corpus(documents: Sequence[SearchDocument], factor: int) -> list[SearchDocument]:
-    """Make a corpus ``factor`` times larger by repeating each document.
-
-    Each copy gets a unique extra word in its title so copies are distinct.
-
-    Args:
-        documents: The real documents.
-        factor: How many copies of each document to create (1 keeps it as is).
-
-    Returns:
-        The enlarged corpus with consecutive document ids.
-    """
-    if factor == 1:
-        return list(documents)
-    scaled: list[SearchDocument] = []
-    for copy in range(factor):
-        for doc in documents:
-            scaled.append(
-                SearchDocument(
-                    doc_id=len(scaled),
-                    title=f"{doc.title} copy{copy}",
-                    path=doc.path,
-                    url=doc.url,
-                )
-            )
-    return scaled
 
 
 def mean_query_ms(strategy: SearchStrategy, queries: Sequence[EvalQuery], repeats: int) -> float:

@@ -29,6 +29,7 @@ from unidex.api.chat_routes import router as chat_router
 from unidex.api.presenter import to_facet_options, to_stack
 from unidex.api.report_routes import router as report_router
 from unidex.api.schemas import DetectedCourse, HealthResponse, SearchResponse, SuggestResponse
+from unidex.api.sink import build_sink
 from unidex.api.usage import RateLimiter, UsageLog
 from unidex.auth.google import GoogleOAuth
 from unidex.chat.llm_resolver import LlmCourseResolver
@@ -179,11 +180,23 @@ def create_app(
                 resolver = build_course_resolver(active_settings, app.state.catalog)
         app.state.chat = ChatService(app.state.catalog, resolver)
         yield
+        sink.close()
 
-    app = FastAPI(title="Unidex", version="0.6.0", lifespan=lifespan)
+    sink = build_sink(active_settings.event_webhook_url, active_settings.event_webhook_secret)
+    # The interactive API pages would show the API to anyone, so they are only for open
+    # (local development) servers.
+    public_docs = oauth is None
+    app = FastAPI(
+        title="Unidex",
+        version="0.7.0",
+        lifespan=lifespan,
+        docs_url="/docs" if public_docs else None,
+        redoc_url="/redoc" if public_docs else None,
+        openapi_url="/openapi.json" if public_docs else None,
+    )
     app.state.settings = active_settings
     app.state.oauth = oauth
-    app.state.usage = UsageLog(active.db_path if active is not None else None)
+    app.state.usage = UsageLog(active.db_path if active is not None else None, sink=sink)
     app.state.report_limiter = RateLimiter(REPORTS_PER_HOUR, 3600)
     if oauth is not None:
         app.add_middleware(

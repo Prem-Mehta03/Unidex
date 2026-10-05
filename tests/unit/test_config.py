@@ -61,3 +61,12 @@ def test_bad_limits_raise(value: str) -> None:
 def test_api_key_never_appears_in_repr() -> None:
     settings = Settings.from_mapping({"GEMINI_API_KEY": "super-secret"})
     assert "super-secret" not in repr(settings)
+
+
+def test_render_url_is_used_unless_overridden() -> None:
+    assert Settings.from_mapping({"RENDER_EXTERNAL_URL": "https://u.onrender.com/"}).public_url == (
+        "https://u.onrender.com"
+    )
+    both = {"RENDER_EXTERNAL_URL": "https://u.onrender.com", "UNIDEX_PUBLIC_URL": "https://my.site"}
+    assert Settings.from_mapping(both).public_url == "https://my.site"
+    assert Settings.from_mapping({}).public_url is None

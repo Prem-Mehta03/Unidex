@@ -275,3 +275,47 @@ under the cap and complete.
 - **Known limits.** Handwritten notes and solutions stay unsearchable; maths symbols extract
   poorly; `.pptx` is not read; name-based and content-based BM25 scores are mixed on different
   scales; the free-text Search tab does not use content yet. The text deploys with the database.
+
+
+## Measurements (Stage 7)
+
+- **One script, one report.** `scripts/measure.py` regenerates `docs/results.md` from the live
+  database, so every number on the resume can be reproduced. It uses no Gemini requests.
+- **Median and 95th percentile, not averages,** because one slow query (a common word) would hide
+  behind a mean. Speed is also measured on a collection 100 times larger by repeating every file;
+  BM25 is faster than a scan there, but not by orders of magnitude, and the report says so.
+- **Content search is checked by self-retrieval.** For a random sample of readable files, three
+  words that are rare across the collection and frequent in that file (and not in its name) are
+  searched. This is an upper bound on the index, not evidence that students phrase topics this
+  way. A human-labelled topic set would be the honest next step.
+- **Chat score caveat is printed in the report.** The 41 messages were written by the developer
+  and the rules were tuned after seeing failures; real student messages are needed for a fair figure.
+- **The resume draft only uses measured numbers** and leaves out anything not run for real
+  (Gemini has not been run against the real service).
+
+
+## Deployment (Stage 6, hosting)
+
+- **Render free web service**, chosen over Railway: Railway's free credit is $5 for 30 days and
+  then $1 a month, which does not keep a service running. Render's free plan sleeps after 15
+  minutes idle (about one minute to wake), gives 750 hours a month and has **no persistent
+  disk**; free Postgres expires after 30 days, so it is not a way out.
+- **Ship the catalog, copy the activity.** The catalog changes only when the owner syncs and
+  reads files, so it is exported to `deploy/catalog.db` (without reports, logs or model counts)
+  and deployed with the code from a private repository. Reports and search logs, which the site
+  produces, are copied by an `EventSink` (Strategy pattern, like the OCR engines) to a Google
+  Sheet through a small Apps Script web app. A background thread batches events every 10
+  seconds (reports are sent at once); a failure is retried three times and then dropped, because
+  logging must never break a search. The sink is a no-op unless both settings are present.
+- **The server stays stateless.** Login sessions are signed cookies, so a restart signs nobody
+  out; the rate limiter's memory resetting on restart is accepted.
+- **No test-user list needed.** Sign-in asks only for basic profile permissions, which Google
+  allows for any account even in Testing mode (no 100-user cap, no 7-day expiry for sign-in);
+  Unidex enforces the college domain itself. The Drive sync uses a different, Desktop client.
+- **Safe by default.** `serve.py` refuses to listen on a public address unless Google login is
+  fully configured, and the interactive API pages are switched off when login is on.
+- **Gemini stays off** for now: its daily counter lives in the database, which resets on restart.
+- **Not tested on Render itself** from the build sandbox. The server was started the way Render
+  starts it (public address, login on, catalog copy) and answered health, login redirect, 401
+  for data and 404 for the API pages; the Apps Script was run against a mock of Google's
+  classes, not on Google.

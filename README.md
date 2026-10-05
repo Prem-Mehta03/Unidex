@@ -121,6 +121,25 @@ python scripts/read_contents.py                    # everything (papers, solutio
 * Safe to stop with Ctrl+C and run again: finished files are skipped, changed files re-read.
 * Restart the website afterwards so the catalog picks up the new text.
 
+## Put it online (Stage 6 deployment)
+
+See [docs/deploy.md](docs/deploy.md): export a clean catalog copy
+(`python scripts/export_deploy_db.py`), push to a private GitHub repository, create the Render
+service from `render.yaml`, and keep reports and logs in a Google Sheet because the free host
+forgets local files.
+
+## Measure it (Stage 7)
+
+```powershell
+python scripts/measure.py
+```
+
+Writes `docs/results.md`: collection size and how it was labelled, how many PDFs are searchable
+by topic, name search (naive scan vs BM25: right file first, in the top 5, MRR), speed (median
+and 95th percentile, and growth on a collection 100 times larger), a self-retrieval test of the
+content search, the chat score, and a resume draft filled with those numbers. No language-model
+requests are used. `scripts/benchmark.py` still gives the per-query speed table.
+
 ## Extract metadata (Stage 3)
 
 ```powershell

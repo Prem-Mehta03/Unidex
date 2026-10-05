@@ -77,6 +77,9 @@ class Settings:
         drive_token_path: Where the Drive refresh token is stored (git-ignored).
         public_url: Address people use to reach the site, e.g. ``https://unidex.example``;
             used to build the Google redirect address. ``None`` means "work it out per request".
+        event_webhook_url: Address that receives copies of reports and search logs so they
+            survive a restart on a free host, or ``None``.
+        event_webhook_secret: Shared secret sent with each post (hidden from ``repr``).
     """
 
     db_path: Path
@@ -95,6 +98,8 @@ class Settings:
     drive_client_id: str | None = None
     drive_client_secret: str | None = field(default=None, repr=False)
     drive_token_path: Path = Path(DEFAULT_DRIVE_TOKEN_PATH)
+    event_webhook_url: str | None = None
+    event_webhook_secret: str | None = field(default=None, repr=False)
 
     @property
     def login_configured(self) -> bool:
@@ -139,9 +144,16 @@ class Settings:
                 f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters long"
             )
         require_login = env.get("UNIDEX_REQUIRE_LOGIN", "").strip().lower() in TRUE_WORDS
-        public_url = env.get("UNIDEX_PUBLIC_URL", "").strip().rstrip("/") or None
+        # Render sets RENDER_EXTERNAL_URL itself; an explicit UNIDEX_PUBLIC_URL wins.
+        public_url = (
+            env.get("UNIDEX_PUBLIC_URL", "").strip() or env.get("RENDER_EXTERNAL_URL", "").strip()
+        ).rstrip("/") or None
         if public_url is not None and not public_url.startswith(("http://", "https://")):
             raise ConfigError("UNIDEX_PUBLIC_URL must start with http:// or https://")
+
+        webhook_url = env.get("EVENT_WEBHOOK_URL", "").strip() or None
+        if webhook_url is not None and not webhook_url.startswith("https://"):
+            raise ConfigError("EVENT_WEBHOOK_URL must start with https://")
 
         settings = cls(
             db_path=Path(db_path),
@@ -170,12 +182,16 @@ class Settings:
             drive_token_path=Path(
                 env.get("DRIVE_TOKEN_PATH", "").strip() or DEFAULT_DRIVE_TOKEN_PATH
             ),
+            event_webhook_url=webhook_url,
+            event_webhook_secret=env.get("EVENT_WEBHOOK_SECRET", "").strip() or None,
         )
         if settings.require_login and not settings.login_configured:
             raise ConfigError(
                 "UNIDEX_REQUIRE_LOGIN is on, but GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET "
                 "and SESSION_SECRET are not all set"
             )
+        if bool(settings.event_webhook_url) != bool(settings.event_webhook_secret):
+            raise ConfigError("EVENT_WEBHOOK_URL and EVENT_WEBHOOK_SECRET must be set together")
         return settings
 
 

@@ -8,8 +8,9 @@ Usage (from the repo root, after loading CSVs and running the extractor)::
 Then open http://127.0.0.1:8000 in a browser. The interactive API reference is
 at http://127.0.0.1:8000/docs.
 
-By default the server only listens on this computer (127.0.0.1). Do not use
-``--host 0.0.0.0`` to share it before Stage 6 adds login.
+By default the server only listens on this computer (127.0.0.1). A web host needs
+``--host 0.0.0.0``; the script refuses that unless Google login is fully configured, so the
+site can never be opened to the internet without a login.
 """
 
 import argparse
@@ -27,6 +28,7 @@ logger = logging.getLogger("serve")
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
+LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -46,6 +48,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         settings = load_settings()
         configure_logging(settings.log_level)
+        if args.host not in LOCAL_HOSTS and not settings.login_configured:
+            logger.error(
+                "Refusing to listen on %s without Google login (set GOOGLE_CLIENT_ID, "
+                "GOOGLE_CLIENT_SECRET and SESSION_SECRET).",
+                args.host,
+            )
+            return 1
         app = create_app(settings=settings)
     except UnidexError as exc:
         logger.error("%s", exc)

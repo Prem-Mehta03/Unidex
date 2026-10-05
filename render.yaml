@@ -1,0 +1,30 @@
+# Render Blueprint: create the service from this file (New > Blueprint).
+# Secrets are never written here; Render asks for them when the service is created.
+services:
+  - type: web
+    name: unidex
+    runtime: python
+    plan: free
+    buildCommand: pip install -e .
+    startCommand: python scripts/serve.py --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: UNIDEX_DB_PATH
+        value: deploy/catalog.db
+      - key: UNIDEX_REQUIRE_LOGIN
+        value: "true"
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: ALLOWED_EMAILS
+        sync: false
+      - key: EVENT_WEBHOOK_URL
+        sync: false
+      - key: EVENT_WEBHOOK_SECRET
+        sync: false

@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from unidex.api.sink import EventSink, NullSink
 from unidex.db.connection import connect
 from unidex.db.repositories import ReportRepository, SearchLogRepository
 
@@ -33,6 +34,15 @@ def utc_now() -> datetime:
 
 def _stamp(moment: datetime) -> str:
     return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
+def _flat(value: Any) -> str:
+    """Turn a filter value (a list, a single value or nothing) into one readable string."""
+    if value is None:
+        return ""
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 class RateLimiter:
@@ -80,13 +90,20 @@ class RateLimiter:
 class UsageLog:
     """Writes search logs and reports into the database (or does nothing without one)."""
 
-    def __init__(self, db_path: Path | str | None, clock: Callable[[], datetime] = utc_now) -> None:
+    def __init__(
+        self,
+        db_path: Path | str | None,
+        clock: Callable[[], datetime] = utc_now,
+        sink: EventSink | None = None,
+    ) -> None:
         """Create the logger.
 
         Args:
             db_path: Database file, or ``None`` to switch logging and reports off.
             clock: Returns the current UTC time; tests pass a fixed one.
+            sink: Optional durable copy of every logged event (see :mod:`unidex.api.sink`).
         """
+        self._sink = sink or NullSink()
         self._db_path = db_path
         self._clock = clock
         self._last: dict[str, tuple[str, float]] = {}
@@ -128,6 +145,16 @@ class UsageLog:
                 return
             self._last[user] = (key, now)
         payload = json.dumps({"source": source, **filters}, default=str, sort_keys=True)
+        self._sink.send(
+            "search",
+            {
+                "user": user,
+                "source": source,
+                "query": text,
+                "results": result_count,
+                **{name: _flat(value) for name, value in filters.items()},
+            },
+        )
         try:
             conn = connect(self._db_path)
             try:
@@ -139,13 +166,16 @@ class UsageLog:
         except sqlite3.Error:
             logger.warning("Could not write the search log", exc_info=True)
 
-    def report(self, drive_file_id: str, report_type: str, note: str) -> tuple[int, bool] | None:
+    def report(
+        self, drive_file_id: str, report_type: str, note: str, user: str = ""
+    ) -> tuple[int, bool] | None:
         """Store a report about a file.
 
         Args:
             drive_file_id: Drive id of the file.
             report_type: ``wrong_info`` or ``broken_link``.
             note: Optional explanation.
+            user: Non-reversible label for the person (kept only in the durable copy).
 
         Returns:
             ``(report id, is_new)``; ``None`` if the file is unknown.
@@ -158,7 +188,7 @@ class UsageLog:
         now = self._clock()
         conn = connect(self._db_path)
         try:
-            return ReportRepository(conn).add(
+            outcome = ReportRepository(conn).add(
                 drive_file_id,
                 report_type,
                 note.strip(),
@@ -167,3 +197,10 @@ class UsageLog:
             )
         finally:
             conn.close()
+        if outcome is not None and outcome[1]:
+            self._sink.send(
+                "report",
+                {"user": user, "file_id": drive_file_id, "type": report_type, "note": note.strip()},
+                urgent=True,
+            )
+        return outcome

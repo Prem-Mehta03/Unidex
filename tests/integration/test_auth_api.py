@@ -233,3 +233,8 @@ def test_an_individually_allowed_gmail_can_sign_in(db_path: Path) -> None:
     with TestClient(app, base_url="https://unidex.test", follow_redirects=False) as c:
         sign_in(c, "gmail")
         assert c.get("/api/me").json()["signed_in"] is True
+
+
+@pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
+def test_api_pages_are_hidden_when_login_is_on(client: TestClient, path: str) -> None:
+    assert client.get(path).status_code == 404

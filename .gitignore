@@ -8,6 +8,10 @@ data/drive_token.json
 # Local databases and real (non-public) drive exports.
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+# The one database that IS uploaded to the web host (private repo only).
+!deploy/catalog.db
 data/real/*
 !data/real/.gitkeep
 

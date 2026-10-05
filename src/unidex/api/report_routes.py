@@ -29,7 +29,7 @@ def report(request: Request, body: ReportRequest, user: CurrentUser) -> ReportRe
             status_code=429, detail="You have sent several reports in a short time. Try later."
         )
     try:
-        outcome = usage.report(body.file_id, body.type.value, body.note or "")
+        outcome = usage.report(body.file_id, body.type.value, body.note or "", user.label)
     except sqlite3.Error as exc:
         logger.exception("Could not store a report")
         raise HTTPException(status_code=503, detail="Could not save the report.") from exc
